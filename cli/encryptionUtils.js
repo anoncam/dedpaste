@@ -50,13 +50,18 @@ async function encryptContent(content, recipientName = null) {
     const authTag = cipher.getAuthTag();
     
     // Encrypt the symmetric key with the recipient's public key
-    const encryptedSymmetricKey = crypto.publicEncrypt(
-      {
-        key: publicKey,
-        padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
-      },
-      symmetricKey
-    );
+    let encryptedSymmetricKey;
+    try {
+      encryptedSymmetricKey = crypto.publicEncrypt(
+        {
+          key: publicKey,
+          padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+        },
+        symmetricKey
+      );
+    } catch (error) {
+      throw new Error(`RSA encryption failed: ${error.message}`);
+    }
     
     // Combine everything into a single structure with metadata
     const encryptedData = {
