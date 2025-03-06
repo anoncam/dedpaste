@@ -7,6 +7,9 @@ A simple pastebin CLI application powered by Cloudflare Workers and R2 storage.
 - Upload plain text or binary files to a pastebin service
 - Get a unique URL that can be shared with others
 - Create one-time pastes that are deleted after first view
+- End-to-end encryption for secure content sharing
+- Support for RSA key pairs and SSH keys
+- Friend-to-friend encryption with key management
 - Command-line interface for easy integration with scripts and tools
 
 ## Installation
@@ -53,6 +56,56 @@ dedpaste --type application/json < data.json
 
 # Output only the URL (useful for scripts)
 echo "content" | dedpaste --output
+
+# Post encrypted content (for yourself)
+echo "Secret data" | dedpaste --encrypt
+
+# Generate a new key pair
+dedpaste keys --gen-key
+
+# Generate a new key pair and encrypt content
+echo "Secret data" | dedpaste send --encrypt --gen-key
+
+# Get and decrypt an encrypted paste
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh
+```
+
+### Key Management
+
+```bash
+# List all your keys (yours and friends')
+dedpaste keys --list
+
+# Add a friend's public key
+dedpaste keys --add-friend alice --key-file alice_public.pem
+
+# Export your public key (to share with friends)
+dedpaste keys --export
+
+# Output your public key to the console
+dedpaste keys --my-key
+
+# Remove a friend's key
+dedpaste keys --remove alice
+
+# Interactive key management
+dedpaste keys --interactive
+```
+
+### Friend-to-Friend Encryption
+
+```bash
+# List available friends
+dedpaste send --list-friends
+
+# Send an encrypted message to a friend
+echo "Secret message for Alice" | dedpaste send --encrypt --for alice
+
+# Send an encrypted one-time message to a friend
+echo "Secret one-time message" | dedpaste send --encrypt --for alice --temp
+
+# Interactive mode for sending encrypted messages
+dedpaste send --interactive --encrypt
 ```
 
 ### API Usage
@@ -64,8 +117,17 @@ curl -X POST -H "Content-Type: text/plain" --data "Your content here" https://pa
 # Post one-time content
 curl -X POST -H "Content-Type: text/plain" --data "Your secret content here" https://paste.d3d.dev/temp
 
+# Post encrypted content (client-side encryption required)
+curl -X POST -H "Content-Type: application/json" --data "Your encrypted content" https://paste.d3d.dev/e/upload
+
+# Post encrypted one-time content
+curl -X POST -H "Content-Type: application/json" --data "Your encrypted content" https://paste.d3d.dev/e/temp
+
 # Get content
 curl https://paste.d3d.dev/{paste-id}
+
+# Get encrypted content (requires client-side decryption)
+curl https://paste.d3d.dev/e/{paste-id}
 ```
 
 ## Configuration
@@ -200,6 +262,8 @@ You can customize the CLI behavior by modifying `cli/index.js`:
 - Change output formatting
 - Add authentication mechanisms
 - Modify error handling
+- Customize encryption algorithms or key management
+- Add support for additional key formats
 
 After making changes, build and deploy:
 
@@ -231,12 +295,144 @@ If the CLI can't connect to your worker:
 1. Check that the `DEDPASTE_API_URL` environment variable is correctly set
 2. Verify that your worker is deployed and accessible
 
+## End-to-End Encryption
+
+DedPaste supports end-to-end encryption, ensuring that your sensitive data remains private. All encryption and decryption happens client-side, meaning the server never sees the unencrypted content or has access to your encryption keys.
+
+### How It Works
+
+1. **Hybrid Encryption**: DedPaste uses a combination of asymmetric (RSA) and symmetric (AES-256-GCM) encryption:
+   - A random symmetric key is generated for each paste
+   - The content is encrypted with this symmetric key
+   - The symmetric key is then encrypted with a public RSA key
+   - Only someone with the corresponding private key can decrypt the content
+
+2. **Key Management**:
+   - You can generate a new key pair with `--gen-key` (recommended)
+   - You can use existing PEM format keys with `--key-file`
+   - Standard SSH keys are not directly supported, but the CLI will offer to generate compatible keys
+   - Keys are stored in `~/.dedpaste/keys/` by default
+   - Friend's public keys are stored in `~/.dedpaste/friends/`
+
+3. **URL Format**:
+   - Encrypted pastes have URLs with an `/e/` prefix (e.g., `https://paste.d3d.dev/e/AbCdEfGh`)
+   - This helps the CLI automatically detect when decryption is needed
+
+4. **Metadata**:
+   - Encrypted pastes include metadata about the sender and intended recipient
+   - This allows the CLI to automatically determine if you can decrypt a paste
+
+### Security Benefits
+
+- **Zero Knowledge**: The server has no knowledge of your encryption keys or plaintext content
+- **Forward Secrecy**: Each paste uses a different symmetric key
+- **Strong Encryption**: Uses industry-standard AES-256-GCM for content encryption
+- **Key Security**: Private keys never leave your device
+- **Recipient Verification**: Metadata ensures only the intended recipient can decrypt
+
+### Limitations
+
+- If you lose your private key, encrypted pastes cannot be recovered
+- The system doesn't provide key recovery mechanisms
+
+## Sending Encrypted Messages to a Friend
+
+DedPaste makes it easy to securely share sensitive information with friends. Here's a step-by-step guide for both you and your friend to exchange encrypted messages:
+
+### For the Sender (You)
+
+1. **Set Up (First-time only)**:
+   ```bash
+   # Install DedPaste
+   npm install -g dedpaste
+   
+   # Generate your encryption key pair (only needed once)
+   dedpaste keys --gen-key
+   ```
+   This will create a public/private key pair in `~/.dedpaste/keys/`.
+
+2. **Share Your Public Key** (First-time only):
+   ```bash
+   # Output your public key to the console
+   dedpaste keys --my-key
+   
+   # Or export your public key to a file
+   dedpaste keys --export
+   ```
+   Send this public key to your friend through a secure channel (Signal, encrypted email, etc.).
+
+3. **Add Your Friend's Public Key** (First-time only):
+   ```bash
+   # Add your friend's public key
+   dedpaste keys --add-friend alice --key-file alice_public.pem
+   
+   # Or use interactive mode
+   dedpaste keys --interactive
+   ```
+
+4. **Send an Encrypted Message**:
+   ```bash
+   # Create an encrypted one-time paste for your friend
+   echo "This is a secret message only Alice can read!" | dedpaste send --encrypt --for alice --temp
+   
+   # Or use interactive mode
+   dedpaste send --interactive --encrypt
+   ```
+
+5. **Share the Link**:
+   Send the generated link (e.g., `https://paste.d3d.dev/e/AbCdEfGh`) to your friend through any channel.
+
+### For the Recipient (Your Friend)
+
+1. **Set Up (First-time only)**:
+   ```bash
+   # Install DedPaste
+   npm install -g dedpaste
+   
+   # Generate your own key pair
+   dedpaste keys --gen-key
+   
+   # Add your friend's public key
+   dedpaste keys --add-friend sender --key-file sender_public.pem
+   ```
+
+2. **Read an Encrypted Message**:
+   ```bash
+   # Decrypt and read the message
+   dedpaste get https://paste.d3d.dev/e/AbCdEfGh
+   ```
+   The message will be decrypted automatically if it was encrypted for you. If it's a one-time paste, it will be deleted from the server after viewing.
+
+3. **Send a Reply**:
+   ```bash
+   # Create an encrypted reply
+   echo "Here's my secret reply!" | dedpaste send --encrypt --for sender --temp
+   ```
+   Send the generated link back to your friend.
+
+### Security Tips
+
+1. **Use One-Time Pastes**: Always use the `--temp` flag for sensitive information to ensure the message is deleted after reading.
+
+2. **Key Management**: Keep your private key secure and never share it with anyone.
+
+3. **Verify Keys**: When first exchanging public keys, verify them through a separate secure channel if possible.
+
+4. **Self-Destruct Messages**: For extremely sensitive information, consider adding instructions for the recipient to delete the message after reading.
+
+5. **Key Fingerprints**: Use key fingerprints to verify the authenticity of keys:
+   ```bash
+   # View key fingerprints
+   dedpaste keys --list
+   ```
+
 ## Security Considerations
 
 - DedPaste doesn't implement authentication out of the box. Anyone with your worker URL can create pastes.
 - Consider adding authentication if you're using it in a sensitive environment.
 - The data is stored in Cloudflare R2, which provides encryption at rest.
 - One-time pastes are designed to be viewed only once but depend on proper client behavior.
+- For maximum security, use the encryption features for sensitive content.
 
 ## License
 
