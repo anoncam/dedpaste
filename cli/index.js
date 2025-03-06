@@ -63,7 +63,8 @@ program
       const response = await fetch(`${API_URL}${endpoint}`, {
         method: 'POST',
         headers: {
-          'Content-Type': contentType
+          'Content-Type': contentType,
+          'User-Agent': `dedpaste-cli/${packageJson.version}`
         },
         body: content
       });

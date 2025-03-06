@@ -131,9 +131,14 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean): Pro
   };
   
   // Store the content in R2 with metadata
+  // Ensure isOneTime flag is explicitly set as a boolean
+  metadata.isOneTime = isOneTime === true;
+  
   await env.PASTE_BUCKET.put(id, content, {
     customMetadata: metadata as any,
   });
+  
+  console.log(`Created paste ${id} (isOneTime: ${metadata.isOneTime})`); // Log for debugging
   
   const baseUrl = new URL(request.url).origin;
   const pasteUrl = `${baseUrl}/${id}`;
@@ -155,19 +160,35 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext): Promise<R
     return new Response('Paste not found', { status: 404 });
   }
   
-  const metadata = paste.customMetadata as unknown as PasteMetadata;
+  // Safely extract metadata with fallbacks
+  let metadata: PasteMetadata;
+  try {
+    metadata = paste.customMetadata as unknown as PasteMetadata;
+  } catch (err) {
+    // Use default metadata if retrieval fails
+    metadata = {
+      contentType: 'text/plain',
+      isOneTime: false,
+      createdAt: Date.now()
+    };
+    console.error(`Error retrieving metadata for paste ${id}: ${err}`);
+  }
   
   // If it's a one-time paste, schedule a deletion
-  if (metadata.isOneTime) {
+  // Double-check that we only delete pastes that are explicitly marked as one-time
+  if (metadata && metadata.isOneTime === true) {
+    console.log(`Deleting one-time paste: ${id}`);
     ctx.waitUntil(env.PASTE_BUCKET.delete(id));
   }
   
-  // Return the paste content
+  // Return the paste content with robust caching headers
   return new Response(paste.body, {
     headers: {
-      'Content-Type': metadata.contentType,
+      'Content-Type': metadata.contentType || 'text/plain',
       'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-store',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
     },
   });
 }
