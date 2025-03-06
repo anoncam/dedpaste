@@ -68,9 +68,11 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm ci
-          # Install Jest globally to make sure it's available for the tests
-          npm install -g jest
+          # Use npm install instead of npm ci to ensure packages are installed correctly
+          # This allows for modifications to package.json that may not be reflected in package-lock.json
+          npm install
+          
+          # No need to install Jest globally as it's now in package.json and node_modules
         
       - name: Debug npm environment
         run: |
