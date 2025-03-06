@@ -283,35 +283,47 @@ Encryption:
         }
       }
       
+      // Check if encryption is requested (manually check for the flag)
+      const shouldEncrypt = process.argv.includes('--encrypt') || process.argv.includes('-e');
+      
       // Handle encryption if requested
-      if (options.encrypt) {
+      if (shouldEncrypt) {
+        
         // Generate new keys if requested
         if (options.genKey) {
+          console.log('Generating new key pair');
           const { publicKeyPath, privateKeyPath } = await generateKeyPair();
           console.log(`
-✓ Generated new key pair:
-  - Private key: ${privateKeyPath}
-  - Public key: ${publicKeyPath}
-`);
+  ✓ Generated new key pair:
+    - Private key: ${privateKeyPath}
+    - Public key: ${publicKeyPath}
+  `);
         }
         
         // Encrypt the content
-        content = await encryptContent(content, recipientName);
-        
-        // Set content type to application/json for encrypted content
-        contentType = 'application/json';
+        try {
+          content = await encryptContent(content, recipientName);
+          
+          // Set content type to application/json for encrypted content
+          contentType = 'application/json';
+        } catch (error) {
+          console.error(`Encryption failed: ${error.message}`);
+          process.exit(1);
+        }
+      } else {
+        console.log('No encryption requested');
       }
       
       // Determine the endpoint based on whether it's a temporary paste and encrypted
       let endpoint;
-      if (options.encrypt) {
+      if (shouldEncrypt) {
         endpoint = options.temp ? '/e/temp' : '/e/upload';
       } else {
         endpoint = options.temp ? '/temp' : '/upload';
       }
       
       // In debug mode, just show the encrypted content
-      if (options.debug && options.encrypt) {
+      if (options.debug && shouldEncrypt) {
         console.log('Debug mode: Showing encrypted content without uploading');
         console.log('Encrypted content (JSON):');
         console.log(content.toString());
@@ -343,7 +355,7 @@ Encryption:
           console.log(url.trim());
         } else {
           let encryptionMessage = '';
-          if (options.encrypt) {
+          if (shouldEncrypt) {
             if (recipientName) {
               encryptionMessage = `🔒 This paste is encrypted for ${recipientName} and can only be decrypted with their private key\n`;
             } else {
