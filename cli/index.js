@@ -523,12 +523,166 @@ For more advanced options, use the subcommands:
   $ dedpaste get --help                                # Retrieval options
 `);
 
-// Add a default command that shows help if no command is specified
+// Add a default command that handles unencrypted pastes
 program
-  .action(() => {
-    // If no arguments provided, show help
-    if (process.argv.length <= 2) {
-      program.help();
+  .action(async (options) => {
+    try {
+      // Only show help if no arguments are provided and no stdin (user is at a TTY)
+      if (process.argv.length <= 2 && process.stdin.isTTY) {
+        program.help();
+        return;
+      }
+
+      let content;
+      let contentType;
+      
+      // Determine if we're reading from a file or stdin
+      if (options.file) {
+        // Read from the specified file
+        if (!fs.existsSync(options.file)) {
+          console.error(`Error: File '${options.file}' does not exist`);
+          process.exit(1);
+        }
+        
+        content = fs.readFileSync(options.file);
+        // Try to detect the content type from the file extension
+        contentType = options.type || lookup(options.file) || 'text/plain';
+      } else {
+        // Read from stdin
+        const stdinBuffer = [];
+        for await (const chunk of process.stdin) {
+          stdinBuffer.push(chunk);
+        }
+        
+        if (stdinBuffer.length === 0) {
+          console.error('Error: No input provided. Pipe content to dedpaste or use --file option.');
+          process.exit(1);
+        }
+        
+        content = Buffer.concat(stdinBuffer);
+        contentType = options.type || 'text/plain';
+      }
+      
+      // Check if encryption is requested (manually check for the flag)
+      const shouldEncrypt = process.argv.includes('--encrypt') || process.argv.includes('-e');
+      
+      // Handle encryption if requested
+      if (shouldEncrypt) {
+        // We need to use the full send command implementation here
+        // rather than trying to redirect to it, since we would lose stdin
+        
+        // Use the created content as is
+        try {
+          // Encrypt the content
+          try {
+            content = await encryptContent(content);
+            
+            // Set content type to application/json for encrypted content
+            contentType = 'application/json';
+          } catch (error) {
+            console.error(`Encryption failed: ${error.message}`);
+            process.exit(1);
+          }
+          
+          // Determine the endpoint for encrypted pastes
+          const endpoint = options.temp ? '/e/temp' : '/e/upload';
+          
+          // Make the API request
+          const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': contentType,
+              'User-Agent': `dedpaste-cli/${packageJson.version}`
+            },
+            body: content
+          });
+          
+          if (!response.ok) {
+            console.error(`Error: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(errorText);
+            process.exit(1);
+          }
+          
+          const url = await response.text();
+          
+          // Copy to clipboard if requested
+          if (options.copy) {
+            try {
+              clipboard.writeSync(url.trim());
+            } catch (error) {
+              console.error(`Unable to copy to clipboard: ${error.message}`);
+            }
+          }
+          
+          // Output the result with encryption notice
+          if (options.output) {
+            console.log(url.trim());
+          } else {
+            console.log(`
+✓ Paste created successfully!
+${options.temp ? '⚠️  This is a one-time paste that will be deleted after first view\n' : ''}
+🔒 This paste is encrypted and can only be decrypted with your private key
+
+${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
+`);
+          }
+          return;
+        } catch (error) {
+          console.error(`Error: ${error.message}`);
+          process.exit(1);
+        }
+      }
+      
+      // Determine the endpoint based on whether it's a temporary paste
+      const endpoint = options.temp ? '/temp' : '/upload';
+      
+      // Make the API request
+      try {
+        const response = await fetch(`${API_URL}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': contentType,
+            'User-Agent': `dedpaste-cli/${packageJson.version}`
+          },
+          body: content
+        });
+        
+        if (!response.ok) {
+          console.error(`Error: ${response.status} ${response.statusText}`);
+          const errorText = await response.text();
+          console.error(errorText);
+          process.exit(1);
+        }
+        
+        const url = await response.text();
+        
+        // Copy to clipboard if requested
+        if (options.copy) {
+          try {
+            clipboard.writeSync(url.trim());
+          } catch (error) {
+            console.error(`Unable to copy to clipboard: ${error.message}`);
+          }
+        }
+        
+        // Output the result
+        if (options.output) {
+          console.log(url.trim());
+        } else {
+          console.log(`
+✓ Paste created successfully!
+${options.temp ? '⚠️  This is a one-time paste that will be deleted after first view\n' : ''}
+${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
+`);
+        }
+      } catch (error) {
+        console.error(`Network error: ${error.message}`);
+        process.exit(1);
+      }
+    } catch (error) {
+      console.error('Error:', error.message);
+      process.exit(1);
     }
   });
 
