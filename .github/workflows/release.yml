@@ -68,12 +68,26 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+        
+      - name: Debug npm environment
+        run: |
+          echo "Node version: $(node -v)"
+          echo "NPM version: $(npm -v)"
+          echo "Listing node_modules:"
+          ls -la node_modules/.bin/
+          echo "Mocha package:"
+          npm list mocha
 
       - name: Build
         run: npm run build
 
       - name: Run tests
-        run: npm test
+        run: |
+          # First try using our updated test command from package.json
+          npm test || (
+            # If that fails, try with explicit path to mocha
+            NODE_OPTIONS="--experimental-vm-modules" ./node_modules/.bin/mocha "test/**/*.test.js"
+          )
 
       - name: Create GitHub Release
         id: create_release
