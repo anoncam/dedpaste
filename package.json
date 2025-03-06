@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "mocha test/**/*.test.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "build": "tsc",
@@ -43,12 +43,15 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",
+    "chai": "^5.0.0",
+    "mocha": "^10.2.0",
     "typescript": "^5.8.2",
     "wrangler": "^3.113.0"
   },
   "dependencies": {
     "commander": "^13.1.0",
     "mime-types": "^2.1.35",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "inquirer": "^9.2.15"
   }
 }

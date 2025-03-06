@@ -6,6 +6,9 @@ type PasteMetadata = {
   contentType: string;
   isOneTime: boolean;
   createdAt: number;
+  // We don't need to store encryption info in metadata
+  // since the server doesn't need to know if content is encrypted
+  // The URL path (/e/) is sufficient to indicate encryption
 };
 
 // Generate a random ID for the paste
@@ -36,19 +39,35 @@ export default {
 
     // Upload a new paste
     if (request.method === 'POST') {
+      // Handle regular uploads
       if (path === '/upload' || path === '/temp') {
         const isOneTime = path === '/temp';
-        return await handleUpload(request, env, isOneTime);
+        return await handleUpload(request, env, isOneTime, false);
       }
+      
+      // Handle encrypted uploads
+      if (path === '/e/upload' || path === '/e/temp') {
+        const isOneTime = path === '/e/temp';
+        return await handleUpload(request, env, isOneTime, true);
+      }
+      
       return new Response('Not found', { status: 404 });
     }
 
     // Get a paste
     if (request.method === 'GET') {
-      const match = path.match(/^\/([a-zA-Z0-9]{8})$/);
-      if (match) {
-        const id = match[1];
-        return await handleGet(id, env, ctx);
+      // Handle regular pastes
+      const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})$/);
+      if (regularMatch) {
+        const id = regularMatch[1];
+        return await handleGet(id, env, ctx, false);
+      }
+      
+      // Handle encrypted pastes
+      const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})$/);
+      if (encryptedMatch) {
+        const id = encryptedMatch[1];
+        return await handleGet(id, env, ctx, true);
       }
       
       // Serve the HTML homepage
@@ -63,6 +82,7 @@ export default {
     h1 { color: #333; }
     pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow: auto; }
     code { font-family: monospace; }
+    .new { background-color: #e6ffe6; border-left: 3px solid #4CAF50; padding-left: 10px; }
   </style>
 </head>
 <body>
@@ -76,8 +96,17 @@ curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${url.orig
 # Post one-time content (deleted after first view)
 curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${url.origin}/temp
 
+<span class="new"># Post encrypted content (client-side encryption)
+curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${url.origin}/e/upload
+
+# Post encrypted one-time content
+curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${url.origin}/e/temp</span>
+
 # Get content
 curl ${url.origin}/{paste-id}
+
+<span class="new"># Get encrypted content
+curl ${url.origin}/e/{paste-id}</span>
   </code></pre>
   <h2>Install CLI:</h2>
   <pre><code>npm install -g dedpaste</code></pre>
@@ -91,6 +120,15 @@ dedpaste < file.txt
 
 # Post one-time content
 echo "secret" | dedpaste --temp
+
+<span class="new"># Post encrypted content
+echo "secret" | dedpaste --encrypt
+
+# Post encrypted content with specific key
+echo "secret" | dedpaste --encrypt --key-file ~/.ssh/id_rsa.pub
+
+# Generate new key pair and encrypt
+echo "secret" | dedpaste --encrypt --gen-key</span>
 
 # Post with custom content type
 dedpaste --type application/json < data.json
@@ -111,7 +149,7 @@ dedpaste --type application/json < data.json
   },
 };
 
-async function handleUpload(request: Request, env: Env, isOneTime: boolean): Promise<Response> {
+async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEncrypted: boolean): Promise<Response> {
   const contentType = request.headers.get('Content-Type') || 'text/plain';
   const content = await request.arrayBuffer();
   
@@ -141,7 +179,8 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean): Pro
   console.log(`Created paste ${id} (isOneTime: ${metadata.isOneTime})`); // Log for debugging
   
   const baseUrl = new URL(request.url).origin;
-  const pasteUrl = `${baseUrl}/${id}`;
+  // Generate URL with /e/ prefix for encrypted pastes
+  const pasteUrl = isEncrypted ? `${baseUrl}/e/${id}` : `${baseUrl}/${id}`;
 
   // Return the paste URL
   return new Response(pasteUrl, {
@@ -152,7 +191,7 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean): Pro
   });
 }
 
-async function handleGet(id: string, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypted: boolean): Promise<Response> {
   // Get the paste from R2
   const paste = await env.PASTE_BUCKET.get(id);
   
@@ -189,6 +228,8 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext): Promise<R
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
       'Expires': '0',
+      // Add a header to indicate if the paste is encrypted
+      'X-Encrypted': isEncrypted ? 'true' : 'false',
     },
   });
 }
