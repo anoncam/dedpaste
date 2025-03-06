@@ -44,20 +44,53 @@ const API_URL = process.env.DEDPASTE_API_URL || 'https://paste.d3d.dev';
 program
   .name('dedpaste')
   .description('CLI client for DedPaste, a simple pastebin service')
-  .version(packageJson.version);
+  .version(packageJson.version)
+  .addHelpText('before', `
+DedPaste - Secure pastebin with end-to-end encryption
+
+USAGE:
+  $ dedpaste                     Create a paste from stdin
+  $ dedpaste < file.txt          Create a paste from a file
+  $ dedpaste --file path/to/file Create a paste from a specific file
+  $ dedpaste --temp              Create a one-time paste (deleted after viewing)
+  $ dedpaste --encrypt           Create an encrypted paste
+  $ dedpaste keys                Manage encryption keys
+  $ dedpaste send                Create and send an encrypted paste
+  $ dedpaste get <url-or-id>     Retrieve and display a paste
+
+EXAMPLES:
+  $ echo "Hello, world!" | dedpaste
+  $ dedpaste --file secret.txt --temp --encrypt
+  $ dedpaste keys --gen-key
+  $ dedpaste send --encrypt --for alice --temp
+  $ dedpaste get https://paste.d3d.dev/AbCdEfGh
+`);
 
 // Add a command to manage keys
 program
   .command('keys')
-  .description('Manage encryption keys')
-  .option('--interactive', 'Use interactive mode')
-  .option('--list', 'List all keys')
-  .option('--add-friend <name>', 'Add a friend\'s public key')
-  .option('--key-file <path>', 'Path to key file')
-  .option('--export', 'Export your public key')
-  .option('--remove <name>', 'Remove a key')
-  .option('--gen-key', 'Generate a new key pair')
-  .option('--my-key', 'Output your public key to the console')
+  .description('Manage encryption keys for secure communication')
+  .option('--interactive', 'Use interactive menu-driven mode for key management')
+  .option('--list', 'List all your keys and friends\' keys with fingerprints')
+  .option('--add-friend <name>', 'Add a friend\'s public key (requires --key-file)')
+  .option('--key-file <path>', 'Path to key file for import/export operations')
+  .option('--export', 'Export your public key to share with friends')
+  .option('--remove <name>', 'Remove a friend\'s key from your keyring')
+  .option('--gen-key', 'Generate a new RSA key pair for encryption')
+  .option('--my-key', 'Output your public key to the console for sharing')
+  .addHelpText('after', `
+Examples:
+  $ dedpaste keys --gen-key                         # Generate a new key pair
+  $ dedpaste keys --list                            # List all your keys
+  $ dedpaste keys --add-friend alice --key-file alice_public.pem  # Add a friend's key
+  $ dedpaste keys --my-key                          # Display your public key
+  $ dedpaste keys --interactive                     # Use interactive mode
+  
+Key Storage:
+  - Your keys are stored in ~/.dedpaste/keys/
+  - Friend keys are stored in ~/.dedpaste/friends/
+  - Key database is at ~/.dedpaste/keydb.json
+`)
   .action(async (options) => {
     try {
       // Interactive mode
@@ -163,18 +196,32 @@ program
 // Add a command to send a paste
 program
   .command('send')
-  .description('Create and send an encrypted paste')
+  .description('Create and send an encrypted paste to friends')
   .option('-t, --temp', 'Create a one-time paste that is deleted after being viewed')
-  .option('--type <content-type>', 'Specify the content type of the paste')
-  .option('-f, --file <path>', 'Upload a file from the specified path')
-  .option('-o, --output', 'Print only the URL (without any additional text)')
-  .option('-e, --encrypt', 'Encrypt the content before uploading')
-  .option('--for <friend>', 'Encrypt for a specific friend')
-  .option('--list-friends', 'List available friends')
-  .option('--key-file <path>', 'Path to public key for encryption')
-  .option('--gen-key', 'Generate a new key pair for encryption')
-  .option('--interactive', 'Use interactive mode')
+  .option('--type <content-type>', 'Specify the content type of the paste (e.g., application/json)')
+  .option('-f, --file <path>', 'Upload a file from the specified path instead of stdin')
+  .option('-o, --output', 'Print only the URL (without any additional text, useful for scripts)')
+  .option('-e, --encrypt', 'Encrypt the content before uploading (requires key setup)')
+  .option('--for <friend>', 'Encrypt for a specific friend (requires adding their key first)')
+  .option('--list-friends', 'List available friends you can encrypt messages for')
+  .option('--key-file <path>', 'Path to public key for encryption (alternative to stored keys)')
+  .option('--gen-key', 'Generate a new key pair for encryption if you don\'t have one')
+  .option('--interactive', 'Use interactive mode with guided prompts for message creation')
   .option('--debug', 'Debug mode: show encrypted content without uploading')
+  .addHelpText('after', `
+Examples:
+  $ echo "Secret message" | dedpaste send --encrypt                # Encrypt for yourself
+  $ echo "For Alice only" | dedpaste send --encrypt --for alice    # Encrypt for a friend
+  $ dedpaste send --file secret.txt --encrypt --temp               # Encrypt a file as one-time paste
+  $ dedpaste send --interactive --encrypt                          # Interactive encrypted message
+  $ dedpaste send --list-friends                                   # List available recipients
+  
+Encryption:
+  - Encryption uses RSA for key exchange and AES-256-GCM for content
+  - Each paste uses a different symmetric key for forward secrecy
+  - Encrypted pastes include metadata about sender and recipient
+  - Use --debug to test encryption without uploading
+`)
   .action(async (options) => {
     try {
       // List friends if requested
@@ -325,9 +372,26 @@ ${encryptionMessage}
 // Update the 'get' command to use the new decryption function
 program
   .command('get')
-  .description('Get a paste by URL or ID')
-  .argument('<url-or-id>', 'URL or ID of the paste to retrieve')
-  .option('--key-file <path>', 'Path to private key for decryption')
+  .description('Retrieve and decrypt a paste by URL or ID')
+  .argument('<url-or-id>', 'URL or ID of the paste to retrieve (e.g., https://paste.d3d.dev/AbCdEfGh or just AbCdEfGh)')
+  .option('--key-file <path>', 'Path to private key for decryption (if not using default key)')
+  .addHelpText('after', `
+Examples:
+  $ dedpaste get https://paste.d3d.dev/AbCdEfGh        # Get a regular paste by URL
+  $ dedpaste get AbCdEfGh                              # Get a regular paste by ID
+  $ dedpaste get https://paste.d3d.dev/e/AbCdEfGh      # Get and decrypt an encrypted paste
+  $ dedpaste get e/AbCdEfGh                            # Get and decrypt an encrypted paste by ID
+  
+URL Format:
+  - Regular pastes: https://paste.d3d.dev/{id}
+  - Encrypted pastes: https://paste.d3d.dev/e/{id}
+  - The CLI automatically detects encrypted pastes and attempts decryption
+  
+Decryption:
+  - Encrypted pastes are automatically decrypted if you have the correct private key
+  - Metadata about sender and creation time is displayed when available
+  - One-time pastes are deleted from the server after viewing
+`)
   .action(async (urlOrId, options) => {
     try {
       // Extract ID and check if it's an encrypted paste
@@ -414,10 +478,34 @@ program
     }
   });
 
+// Add options for the default command (no subcommand)
+program
+  .option('-t, --temp', 'Create a one-time paste that is deleted after being viewed')
+  .option('--type <content-type>', 'Specify the content type of the paste (e.g., application/json)')
+  .option('-f, --file <path>', 'Upload a file from the specified path instead of stdin')
+  .option('-o, --output', 'Print only the URL (without any additional text)')
+  .option('-e, --encrypt', 'Encrypt the content before uploading (requires key setup)')
+  .addHelpText('after', `
+Default Command Examples:
+  $ echo "Hello, world!" | dedpaste                    # Create a basic paste
+  $ dedpaste --file document.txt                       # Upload a file
+  $ echo "Secret data" | dedpaste --encrypt            # Create an encrypted paste
+  $ dedpaste --file image.jpg --type image/jpeg        # Upload with specific content type
+  $ echo "One-time message" | dedpaste --temp          # Create a one-time paste
+  
+For more advanced options, use the subcommands:
+  $ dedpaste keys --help                               # Key management options
+  $ dedpaste send --help                               # Advanced sending options
+  $ dedpaste get --help                                # Retrieval options
+`);
+
 // Add a default command that shows help if no command is specified
 program
   .action(() => {
-    program.help();
+    // If no arguments provided, show help
+    if (process.argv.length <= 2) {
+      program.help();
+    }
   });
 
 program.parse();
