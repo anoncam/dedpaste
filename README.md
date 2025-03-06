@@ -588,6 +588,47 @@ rm /tmp/backup.tar.gz
 - Regularly update your key pairs for enhanced security.
 - Consider using a password manager to securely store your private key backup.
 
+## Contributing
+
+### Releases and Versioning
+
+DedPaste uses automated releases based on version changes in `package.json`:
+
+1. **Versioning Process**:
+   - When you want to create a new release, update the version number in `package.json`
+   - Follow [Semantic Versioning](https://semver.org/) guidelines:
+     - Increment MAJOR version for incompatible API changes
+     - Increment MINOR version for adding functionality in a backward compatible manner
+     - Increment PATCH version for backward compatible bug fixes
+
+2. **Automated Release Flow**:
+   - When a PR that changes the version in `package.json` is merged to `main`, GitHub Actions will:
+     - Verify the version has been incremented
+     - Run tests and build the package
+     - Create a GitHub release with the new version number
+     - Publish the package to npm automatically
+   - The same process occurs if the version is updated directly on the `main` branch
+
+3. **Creating a Release**:
+   ```bash
+   # Example: Update from 1.0.0 to 1.0.1 for a bug fix
+   # Edit package.json and update the version field
+   
+   # Commit and push to a new branch
+   git checkout -b version/bump-to-1.0.1
+   git add package.json
+   git commit -m "Bump version to 1.0.1"
+   git push origin version/bump-to-1.0.1
+   
+   # Create a PR and merge to main
+   # The release will be automatically created and published to npm
+   ```
+
+4. **Checking Release Status**:
+   - Check the GitHub Actions tab to monitor the release process
+   - Verify the new release appears on the Releases page
+   - Confirm the package has been published to npm with `npm view dedpaste version`
+
 ## License
 
 ISC
