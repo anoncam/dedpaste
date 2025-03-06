@@ -146,20 +146,22 @@ async function decryptV2Content(encryptedData) {
   const metadata = encryptedData.metadata;
   let privateKey;
   
+  // Get self key for comparison
+  const selfKey = await getKey('self');
+  if (!selfKey) {
+    throw new Error('No personal key found for decryption');
+  }
+  
   // Determine which key to use
   if (metadata.recipient.type === 'self') {
     // Encrypted for self
-    const selfKey = await getKey('self');
-    if (!selfKey) {
-      throw new Error('No personal key found for decryption');
-    }
     privateKey = await fsPromises.readFile(selfKey.private, 'utf8');
   } else if (metadata.recipient.type === 'friend' && metadata.recipient.name === 'self') {
     // Encrypted by a friend for us
-    const selfKey = await getKey('self');
-    if (!selfKey) {
-      throw new Error('No personal key found for decryption');
-    }
+    privateKey = await fsPromises.readFile(selfKey.private, 'utf8');
+  } else if (metadata.recipient.fingerprint && metadata.recipient.fingerprint === selfKey.fingerprint) {
+    // Fingerprint matches our key, even if the name doesn't match
+    console.log(`Note: This paste was labeled for "${metadata.recipient.name}" but the fingerprint matches your key.`);
     privateKey = await fsPromises.readFile(selfKey.private, 'utf8');
   } else {
     throw new Error(`This paste was encrypted for ${metadata.recipient.name}, not for you`);
