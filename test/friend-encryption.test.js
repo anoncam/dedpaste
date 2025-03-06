@@ -22,15 +22,16 @@ import {
 // Test directory for keys
 const TEST_DIR = path.join(os.tmpdir(), 'dedpaste-test-' + Math.random().toString(36).substring(2, 10));
 
-// Mock the key paths for testing
-jest.mock('../cli/keyManager.js', () => {
-  const originalModule = jest.requireActual('../cli/keyManager.js');
-  return {
-    ...originalModule,
-    DEFAULT_KEY_DIR: path.join(TEST_DIR, 'keys'),
-    FRIENDS_KEY_DIR: path.join(TEST_DIR, 'friends')
-  };
-});
+// We need to add this for Jest compatibility
+global.jest = {
+  mock: () => {},
+  requireActual: () => {
+    return {
+      DEFAULT_KEY_DIR: path.join(TEST_DIR, 'keys'),
+      FRIENDS_KEY_DIR: path.join(TEST_DIR, 'friends')
+    };
+  }
+};
 
 describe('Friend-to-Friend Encryption', () => {
   before(async () => {
