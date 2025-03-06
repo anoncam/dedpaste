@@ -3,6 +3,7 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 import { promises as fsPromises } from 'fs';
 
 // Import our modules
