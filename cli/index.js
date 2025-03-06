@@ -10,6 +10,7 @@ import { createRequire } from 'module';
 import { promises as fsPromises } from 'fs';
 import { homedir } from 'os';
 import inquirer from 'inquirer';
+import clipboard from 'clipboardy';
 
 // Import our new modules
 import {
@@ -208,6 +209,7 @@ program
   .option('--gen-key', 'Generate a new key pair for encryption if you don\'t have one')
   .option('--interactive', 'Use interactive mode with guided prompts for message creation')
   .option('--debug', 'Debug mode: show encrypted content without uploading')
+  .option('-c, --copy', 'Copy the URL to clipboard automatically')
   .addHelpText('after', `
 Examples:
   $ echo "Secret message" | dedpaste send --encrypt                # Encrypt for yourself
@@ -350,6 +352,15 @@ Encryption:
         
         const url = await response.text();
         
+        // Copy to clipboard if requested
+        if (options.copy) {
+          try {
+            clipboard.writeSync(url.trim());
+          } catch (error) {
+            console.error(`Unable to copy to clipboard: ${error.message}`);
+          }
+        }
+        
         // Output the result
         if (options.output) {
           console.log(url.trim());
@@ -367,7 +378,7 @@ Encryption:
 ✓ Paste created successfully!
 ${options.temp ? '⚠️  This is a one-time paste that will be deleted after first view\n' : ''}
 ${encryptionMessage}
-📋 ${url.trim()}
+${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
 `);
         }
       } catch (error) {
@@ -497,6 +508,7 @@ program
   .option('-f, --file <path>', 'Upload a file from the specified path instead of stdin')
   .option('-o, --output', 'Print only the URL (without any additional text)')
   .option('-e, --encrypt', 'Encrypt the content before uploading (requires key setup)')
+  .option('-c, --copy', 'Copy the URL to clipboard automatically')
   .addHelpText('after', `
 Default Command Examples:
   $ echo "Hello, world!" | dedpaste                    # Create a basic paste
