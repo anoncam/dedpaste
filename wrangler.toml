@@ -1,0 +1,8 @@
+name = "dedpaste"
+main = "src/index.ts"
+compatibility_date = "2023-10-02"
+
+[[r2_buckets]]
+binding = "PASTE_BUCKET"
+bucket_name = "dedpaste-bucket"
+preview_bucket_name = "dedpaste-bucket-preview"
