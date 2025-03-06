@@ -11,19 +11,36 @@
     "build": "tsc",
     "format": "prettier --write 'src/**/*.{js,ts}'",
     "lint": "eslint --ext .js,.ts src/",
-    "postinstall": "chmod +x ./cli/index.js"
+    "postinstall": "chmod +x ./cli/index.js",
+    "prepublishOnly": "npm run build"
   },
   "bin": {
     "dedpaste": "./cli/index.js"
   },
+  "files": [
+    "dist",
+    "cli",
+    "README.md"
+  ],
   "keywords": [
     "pastebin",
     "cli",
     "cloudflare",
     "r2"
   ],
-  "author": "",
+  "author": "Shebash.io",
   "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anoncam/dedpaste.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anoncam/dedpaste/issues"
+  },
+  "homepage": "https://github.com/anoncam/dedpaste#readme",
+  "engines": {
+    "node": ">=14"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",
     "typescript": "^5.8.2",

@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
 
 // Default API URL - can be changed via environment variable
-const API_URL = process.env.DEDPASTE_API_URL || 'https://dedpaste.your-subdomain.workers.dev';
+const API_URL = process.env.DEDPASTE_API_URL || 'https://paste.d3d.dev';
 
 program
   .name('dedpaste')
