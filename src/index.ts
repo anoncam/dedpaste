@@ -11,6 +11,10 @@ type PasteMetadata = {
   // The URL path (/e/) is sufficient to indicate encryption
 };
 
+// For one-time pastes, we'll use a completely different key format
+// with a prefix to make identifying them clear
+const ONE_TIME_PREFIX = "onetime-";
+
 // Generate a random ID for the paste
 function generateId(length = 8): string {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -325,30 +329,48 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
   }
   
   // Generate a unique ID for the paste
-  const id = generateId();
+  let id = generateId();
   
-  // Create the metadata for the paste
-  const metadata: PasteMetadata = {
-    contentType,
-    isOneTime,
-    createdAt: Date.now(),
-  };
-  
-  // Store the content in R2 with metadata
-  // Ensure isOneTime flag is explicitly set as a boolean
-  metadata.isOneTime = isOneTime === true;
-  
-  await env.PASTE_BUCKET.put(id, content, {
-    customMetadata: metadata as any,
-  });
-  
-  console.log(`Created paste ${id} (isOneTime: ${metadata.isOneTime})`); // Log for debugging
+  // For one-time pastes, use a completely different storage strategy with a prefix
+  if (isOneTime) {
+    // Add a prefix to clearly identify one-time pastes
+    const storageKey = `${ONE_TIME_PREFIX}${id}`;
+    
+    // Create the metadata for the paste
+    const metadata: PasteMetadata = {
+      contentType,
+      isOneTime: true, // Always true for this storage path
+      createdAt: Date.now(),
+    };
+    
+    // Store the content in R2 with the prefixed key
+    await env.PASTE_BUCKET.put(storageKey, content, {
+      customMetadata: metadata as any,
+    });
+    
+    console.log(`Created one-time paste with storage key ${storageKey}`);
+  } else {
+    // Regular paste - standard storage path
+    // Create the metadata for the paste
+    const metadata: PasteMetadata = {
+      contentType,
+      isOneTime: false, // Always false for this storage path
+      createdAt: Date.now(),
+    };
+    
+    // Store the content in R2 with metadata
+    await env.PASTE_BUCKET.put(id, content, {
+      customMetadata: metadata as any,
+    });
+    
+    console.log(`Created regular paste ${id}`);
+  }
   
   const baseUrl = new URL(request.url).origin;
   // Generate URL with /e/ prefix for encrypted pastes
   const pasteUrl = isEncrypted ? `${baseUrl}/e/${id}` : `${baseUrl}/${id}`;
 
-  // Return the paste URL
+  // Return the paste URL - we always use the unprefixed ID in the URL
   return new Response(pasteUrl, {
     headers: {
       'Access-Control-Allow-Origin': '*',
@@ -358,104 +380,82 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
 }
 
 async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypted: boolean): Promise<Response> {
-  // Get the paste from R2
+  // First, check if this is a one-time paste by trying to get it with the one-time prefix
+  const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
+  const oneTimePaste = await env.PASTE_BUCKET.get(oneTimeKey);
+  
+  // If we found a one-time paste with the prefixed key
+  if (oneTimePaste) {
+    console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}`);
+    
+    // Get the content and metadata before we delete the paste
+    const content = await oneTimePaste.arrayBuffer();
+    let contentType = 'text/plain';
+    
+    try {
+      const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
+      contentType = metadata.contentType || 'text/plain';
+    } catch (err) {
+      console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
+    }
+    
+    // Delete the paste immediately before returning the content
+    try {
+      await env.PASTE_BUCKET.delete(oneTimeKey);
+      console.log(`[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}`);
+    } catch (error) {
+      console.error(`[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`);
+      
+      // Schedule a backup deletion attempt to make sure it gets deleted
+      ctx.waitUntil(
+        (async () => {
+          try {
+            console.log(`[TEMP PASTE] Attempting backup deletion for one-time paste ${id}`);
+            await env.PASTE_BUCKET.delete(oneTimeKey);
+            console.log(`[TEMP PASTE] Backup deletion successful for one-time paste ${id}`);
+          } catch (backupError) {
+            console.error(`[TEMP PASTE] Backup deletion failed for one-time paste ${id}: ${backupError}`);
+          }
+        })()
+      );
+    }
+    
+    // Return the content
+    return new Response(content, {
+      headers: {
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'X-Encrypted': isEncrypted ? 'true' : 'false',
+      },
+    });
+  }
+  
+  // If not a one-time paste or if it's already been retrieved (deleted),
+  // check for a regular paste
   const paste = await env.PASTE_BUCKET.get(id);
   
   if (!paste) {
     return new Response('Paste not found', { status: 404 });
   }
   
-  // Safely extract metadata with fallbacks
-  let metadata: PasteMetadata;
-  try {
-    metadata = paste.customMetadata as unknown as PasteMetadata;
-  } catch (err) {
-    // Use default metadata if retrieval fails
-    metadata = {
-      contentType: 'text/plain',
-      isOneTime: false,
-      createdAt: Date.now()
-    };
-    console.error(`Error retrieving metadata for paste ${id}: ${err}`);
-  }
-  
-  // First, mark this paste as accessed in our database
-  // to prevent concurrent retrieval from multiple clients
-  if (metadata && metadata.isOneTime === true) {
-    try {
-      // Create or update an access record to prevent multiple clients viewing the same paste
-      // We'll change the key to a format that indicates it's been accessed
-      const accessKey = `${id}-accessed`;
-      const accessInfo = {
-        accessTime: Date.now(),
-        isAccessed: true
-      };
-      
-      // Check if this paste has already been accessed
-      const alreadyAccessed = await env.PASTE_BUCKET.head(accessKey);
-      
-      if (alreadyAccessed !== null) {
-        console.log(`[TEMP PASTE] Paste ${id} was already accessed, rejecting second view`);
-        // This paste has already been retrieved once
-        return new Response('This one-time paste has already been viewed and is no longer available.', { 
-          status: 410, // Gone
-          headers: {
-            'Content-Type': 'text/plain',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-          }
-        });
-      }
-      
-      // Mark this paste as accessed
-      await env.PASTE_BUCKET.put(accessKey, JSON.stringify(accessInfo));
-      console.log(`[TEMP PASTE] Marked paste ${id} as accessed at ${accessInfo.accessTime}`);
-    } catch (accessError) {
-      console.error(`[TEMP PASTE] Error marking paste ${id} as accessed: ${accessError}`);
-      // If we can't mark it as accessed, we should not proceed, to prevent multiple views
-      return new Response('This one-time paste could not be properly processed. Please try again later.', { 
-        status: 500,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        }
-      });
-    }
-  }
-  
-  // Get the content buffer after ensuring this is the first access
+  // Regular paste - get the content and metadata
   const content = await paste.arrayBuffer();
+  let contentType = 'text/plain';
   
-  // Now that we've safely retrieved the content and marked it as accessed,
-  // we can schedule its deletion if it's a one-time paste
-  if (metadata && metadata.isOneTime === true) {
-    // Schedule deletion with waitUntil to ensure it happens after response is sent
-    ctx.waitUntil(
-      (async () => {
-        try {
-          console.log(`[TEMP PASTE] Deleting one-time paste with ID: ${id}`);
-          await env.PASTE_BUCKET.delete(id);
-          console.log(`[TEMP PASTE] Deletion of one-time paste ${id} successful`);
-        } catch (error) {
-          console.error(`[TEMP PASTE] Error during deletion of one-time paste ${id}: ${error}`);
-          // Try again after a short delay
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          try {
-            await env.PASTE_BUCKET.delete(id);
-            console.log(`[TEMP PASTE] Retry deletion of one-time paste ${id} successful`);
-          } catch (retryError) {
-            console.error(`[TEMP PASTE] Retry deletion of one-time paste ${id} failed: ${retryError}`);
-          }
-        }
-      })()
-    );
+  try {
+    const metadata = paste.customMetadata as unknown as PasteMetadata;
+    contentType = metadata.contentType || 'text/plain';
+  } catch (err) {
+    console.error(`Error retrieving metadata for paste ${id}: ${err}`);
   }
   
   // Return the paste content with robust caching headers
   return new Response(content, {
     headers: {
-      'Content-Type': metadata.contentType || 'text/plain',
+      'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       'Pragma': 'no-cache',
