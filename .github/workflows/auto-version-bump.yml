@@ -1,0 +1,82 @@
+name: Auto Version Bump
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Git
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+      
+      - name: Check PR label for version bump type
+        id: check-label
+        run: |
+          PR_LABELS="${{ toJson(github.event.pull_request.labels.*.name) }}"
+          
+          if echo "$PR_LABELS" | grep -q '"major"'; then
+            echo "bump_type=major" >> $GITHUB_OUTPUT
+          elif echo "$PR_LABELS" | grep -q '"minor"'; then
+            echo "bump_type=minor" >> $GITHUB_OUTPUT
+          else
+            # Default to patch if no specific label found
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm install -g semver
+      
+      - name: Bump version
+        id: bump-version
+        run: |
+          # Get current version from package.json
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          
+          # Determine new version based on bump type
+          if [ "${{ steps.check-label.outputs.bump_type }}" = "major" ]; then
+            NEW_VERSION=$(semver -i major $CURRENT_VERSION)
+          elif [ "${{ steps.check-label.outputs.bump_type }}" = "minor" ]; then
+            NEW_VERSION=$(semver -i minor $CURRENT_VERSION)
+          else
+            NEW_VERSION=$(semver -i patch $CURRENT_VERSION)
+          fi
+          
+          echo "Current version: $CURRENT_VERSION"
+          echo "New version: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          
+          # Update package.json with new version
+          node -e "const fs = require('fs'); const pkg = require('./package.json'); pkg.version = '$NEW_VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
+      
+      - name: Commit and push version bump
+        run: |
+          git add package.json
+          git commit -m "Bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]"
+          git push
+      
+      - name: Output summary
+        run: |
+          echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }}"
+          echo "🚀 The release workflow will be triggered automatically by this change."

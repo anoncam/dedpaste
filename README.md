@@ -8,9 +8,10 @@ A simple pastebin CLI application powered by Cloudflare Workers and R2 storage.
 - Get a unique URL that can be shared with others
 - Create one-time pastes that are deleted after first view
 - End-to-end encryption for secure content sharing
-- Support for RSA key pairs and SSH keys
+- Support for RSA key pairs (PEM format)
 - Friend-to-friend encryption with key management
 - Command-line interface for easy integration with scripts and tools
+- Dark mode web interface for better readability
 
 ## Installation
 
@@ -356,7 +357,8 @@ You can customize the Worker behavior by modifying `src/index.ts`:
 - Modify paste expiration behavior
 - Add authentication
 - Change CORS settings
-- Customize the homepage HTML
+- Customize the homepage HTML and dark mode styling
+- Modify the UI layout and feature presentation
 
 ### CLI Customization
 
@@ -649,42 +651,44 @@ rm /tmp/backup.tar.gz
 
 ### Releases and Versioning
 
-DedPaste uses automated releases based on version changes in `package.json`:
+DedPaste uses fully automated releases with automatic version bumping:
 
-1. **Versioning Process**:
-   - When you want to create a new release, update the version number in `package.json`
-   - Follow [Semantic Versioning](https://semver.org/) guidelines:
-     - Increment MAJOR version for incompatible API changes
-     - Increment MINOR version for adding functionality in a backward compatible manner
-     - Increment PATCH version for backward compatible bug fixes
+1. **Automated Version Bumping**:
+   - When a PR is merged to `main`, the version is automatically incremented
+   - The PR label determines the type of version bump:
+     - `major`: Breaking changes (1.0.0 → 2.0.0)
+     - `minor`: New features (1.0.0 → 1.1.0)
+     - No label or any other label: Bug fixes (1.0.0 → 1.0.1)
 
 2. **Automated Release Flow**:
-   - When a PR that changes the version in `package.json` is merged to `main`, GitHub Actions will:
-     - Verify the version has been incremented
+   - After a merge, GitHub Actions will:
+     - Bump the version in package.json based on PR labels
      - Run tests and build the package
-     - Create a GitHub release with the new version number
+     - Create a GitHub release with the new version
      - Publish the package to npm automatically
-   - The same process occurs if the version is updated directly on the `main` branch
 
 3. **Creating a Release**:
    ```bash
-   # Example: Update from 1.0.0 to 1.0.1 for a bug fix
-   # Edit package.json and update the version field
+   # 1. Create a feature branch
+   git checkout -b feature/my-improvement
    
-   # Commit and push to a new branch
-   git checkout -b version/bump-to-1.0.1
-   git add package.json
-   git commit -m "Bump version to 1.0.1"
-   git push origin version/bump-to-1.0.1
+   # 2. Make your changes
+   # ... edit files ...
    
-   # Create a PR and merge to main
-   # The release will be automatically created and published to npm
+   # 3. Commit and push
+   git add .
+   git commit -m "Add my improvement"
+   git push origin feature/my-improvement
+   
+   # 4. Create a PR on GitHub and add the appropriate label
+   # 5. When merged, version will be bumped and release created automatically
    ```
 
-4. **Checking Release Status**:
-   - Check the GitHub Actions tab to monitor the release process
-   - Verify the new release appears on the Releases page
-   - Confirm the package has been published to npm with `npm view dedpaste version`
+4. **Manual Versioning (Optional)**:
+   - If needed, you can manually update the version in package.json
+   - The release workflow will respect your manually set version
+
+For detailed information about the release process, see [RELEASE-PROCESS.md](./RELEASE-PROCESS.md).
 
 ## License
 
