@@ -34,14 +34,55 @@ This will install the CLI globally, allowing you to use the `dedpaste` command f
    npm link
    ```
 
+### Shell Auto-Completion
+
+DedPaste includes built-in commands to set up shell completion for Bash and Zsh:
+
+#### For Bash
+
+```bash
+# Generate the completion script
+dedpaste completion --bash > ~/.dedpaste-completion.bash
+
+# Add this to your ~/.bashrc
+echo 'source ~/.dedpaste-completion.bash' >> ~/.bashrc
+
+# Apply changes to current session
+source ~/.bashrc
+```
+
+#### For Zsh
+
+```bash
+# Generate the completion script
+dedpaste completion --zsh > ~/.dedpaste-completion.zsh
+
+# Add this to your ~/.zshrc
+echo 'source ~/.dedpaste-completion.zsh' >> ~/.zshrc
+
+# Apply changes to current session
+source ~/.zshrc
+```
+
+For more installation options:
+
+```bash
+# View Bash installation instructions
+dedpaste completion --bash --install
+
+# View Zsh installation instructions
+dedpaste completion --zsh --install
+```
+
 ## Usage
 
-DedPaste CLI has four main command modes:
+DedPaste CLI has five main command modes:
 
 1. **Default mode** - Basic paste operations (no subcommand)
 2. **`keys`** - Key management operations
 3. **`send`** - Create and send encrypted pastes
 4. **`get`** - Retrieve and decrypt pastes
+5. **`completion`** - Generate shell auto-completion scripts
 
 ### Basic Usage (Default Command)
 
@@ -132,6 +173,22 @@ dedpaste get AbCdEfGh
 
 # Get an encrypted paste using a specific private key file
 dedpaste get https://paste.d3d.dev/e/AbCdEfGh --key-file /path/to/private.pem
+```
+
+### Auto-Completion (`completion` Command)
+
+```bash
+# Generate Bash completion script
+dedpaste completion --bash > ~/.dedpaste-completion.bash
+
+# Generate Zsh completion script
+dedpaste completion --zsh > ~/.dedpaste-completion.zsh
+
+# Show Bash installation instructions
+dedpaste completion --bash --install
+
+# Show Zsh installation instructions
+dedpaste completion --zsh --install
 ```
 
 ### Interactive Mode

@@ -58,6 +58,7 @@ USAGE:
   $ dedpaste keys                Manage encryption keys
   $ dedpaste send                Create and send an encrypted paste
   $ dedpaste get <url-or-id>     Retrieve and display a paste
+  $ dedpaste completion          Generate shell completion scripts
 
 EXAMPLES:
   $ echo "Hello, world!" | dedpaste
@@ -65,6 +66,7 @@ EXAMPLES:
   $ dedpaste keys --gen-key
   $ dedpaste send --encrypt --for alice --temp
   $ dedpaste get https://paste.d3d.dev/AbCdEfGh
+  $ dedpaste completion --bash > ~/.dedpaste-completion.bash
 `);
 
 // Add a command to manage keys
@@ -679,6 +681,257 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
       } catch (error) {
         console.error(`Network error: ${error.message}`);
         process.exit(1);
+      }
+    } catch (error) {
+      console.error('Error:', error.message);
+      process.exit(1);
+    }
+  });
+
+// Add a command for shell completion setup
+program
+  .command('completion')
+  .description('Generate shell completion script')
+  .option('--bash', 'Output Bash completion script')
+  .option('--zsh', 'Output Zsh completion script')
+  .option('--install', 'Print installation instructions instead of the script')
+  .addHelpText('after', `
+Examples:
+  $ dedpaste completion --bash            # Output Bash completion script
+  $ dedpaste completion --zsh             # Output Zsh completion script
+  $ dedpaste completion --bash --install  # Show Bash installation instructions
+  $ dedpaste completion --zsh --install   # Show Zsh installation instructions
+  
+Installation:
+  # For Bash (add to your ~/.bashrc):
+  dedpaste completion --bash > ~/.dedpaste-completion.bash
+  echo 'source ~/.dedpaste-completion.bash' >> ~/.bashrc
+  
+  # For Zsh (add to your ~/.zshrc):
+  dedpaste completion --zsh > ~/.dedpaste-completion.zsh
+  echo 'source ~/.dedpaste-completion.zsh' >> ~/.zshrc
+`)
+  .action(async (options) => {
+    try {
+      // Check if we should output for bash or zsh
+      if (!options.bash && !options.zsh) {
+        console.error("Error: You must specify either --bash or --zsh");
+        process.exit(1);
+      }
+      
+      if (options.bash && options.zsh) {
+        console.error("Error: Please specify only one shell type (--bash or --zsh)");
+        process.exit(1);
+      }
+      
+      // Installation instructions
+      if (options.install) {
+        if (options.bash) {
+          console.log(`
+# Bash Completion Installation Instructions
+
+# Option 1: Source directly in your shell profile
+dedpaste completion --bash > ~/.dedpaste-completion.bash
+echo 'source ~/.dedpaste-completion.bash' >> ~/.bashrc
+
+# Option 2: Install system-wide (if you have bash-completion installed)
+# On macOS with Homebrew:
+dedpaste completion --bash | sudo tee /usr/local/etc/bash_completion.d/dedpaste > /dev/null
+
+# On Linux (Ubuntu/Debian):
+dedpaste completion --bash | sudo tee /etc/bash_completion.d/dedpaste > /dev/null
+
+# Don't forget to restart your shell or source your profile:
+source ~/.bashrc
+`);
+        } else if (options.zsh) {
+          console.log(`
+# Zsh Completion Installation Instructions
+
+# Option 1: Source directly in your shell profile
+dedpaste completion --zsh > ~/.dedpaste-completion.zsh
+echo 'source ~/.dedpaste-completion.zsh' >> ~/.zshrc
+
+# Option 2: Install to your fpath
+mkdir -p ~/.zsh/completions
+dedpaste completion --zsh > ~/.zsh/completions/_dedpaste
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+
+# Make sure you have compinit loaded in your .zshrc
+# If not already there, add:
+# autoload -Uz compinit
+# compinit
+
+# Don't forget to restart your shell or source your profile:
+source ~/.zshrc
+`);
+        }
+        return;
+      }
+      
+      // Generate bash completion script
+      if (options.bash) {
+        console.log(`#!/usr/bin/env bash
+
+_dedpaste_completions() {
+  local cur prev opts commands
+  COMPREPLY=()
+  cur="\${COMP_WORDS[COMP_CWORD]}"
+  prev="\${COMP_WORDS[COMP_CWORD-1]}"
+  commands="keys send get completion"
+  main_opts="-t --temp --type -f --file -o --output -e --encrypt -c --copy --help --version"
+  
+  # Check if we're completing a command
+  if [[ \${COMP_CWORD} -eq 1 ]]; then
+    if [[ \${cur} == -* ]]; then
+      COMPREPLY=( $(compgen -W "\${main_opts}" -- "\${cur}") )
+      return 0
+    else
+      COMPREPLY=( $(compgen -W "\${commands}" -- "\${cur}") )
+      return 0
+    fi
+  fi
+  
+  # Complete options for specific commands
+  case "\${COMP_WORDS[1]}" in
+    keys)
+      local key_opts="--interactive --list --add-friend --key-file --export --remove --gen-key --my-key --help"
+      if [[ \${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "\${key_opts}" -- "\${cur}") )
+      elif [[ \${prev} == "--key-file" ]]; then
+        COMPREPLY=( $(compgen -f -- "\${cur}") )
+      fi
+      return 0
+      ;;
+    send)
+      local send_opts="-t --temp --type -f --file -o --output -e --encrypt --for --list-friends --key-file --gen-key --interactive --debug -c --copy --help"
+      if [[ \${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "\${send_opts}" -- "\${cur}") )
+      elif [[ \${prev} == "--key-file" || \${prev} == "-f" || \${prev} == "--file" ]]; then
+        COMPREPLY=( $(compgen -f -- "\${cur}") )
+      elif [[ \${prev} == "--type" ]]; then
+        local content_types="text/plain application/json text/html text/markdown application/xml application/javascript text/css"
+        COMPREPLY=( $(compgen -W "\${content_types}" -- "\${cur}") )
+      fi
+      return 0
+      ;;
+    get)
+      local get_opts="--key-file --help"
+      if [[ \${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "\${get_opts}" -- "\${cur}") )
+      elif [[ \${prev} == "--key-file" ]]; then
+        COMPREPLY=( $(compgen -f -- "\${cur}") )
+      fi
+      return 0
+      ;;
+    completion)
+      local completion_opts="--bash --zsh --install --help"
+      if [[ \${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "\${completion_opts}" -- "\${cur}") )
+      fi
+      return 0
+      ;;
+    *)
+      if [[ \${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "\${main_opts}" -- "\${cur}") )
+      elif [[ \${prev} == "--key-file" || \${prev} == "-f" || \${prev} == "--file" ]]; then
+        COMPREPLY=( $(compgen -f -- "\${cur}") )
+      elif [[ \${prev} == "--type" ]]; then
+        local content_types="text/plain application/json text/html text/markdown application/xml application/javascript text/css"
+        COMPREPLY=( $(compgen -W "\${content_types}" -- "\${cur}") )
+      fi
+      return 0
+      ;;
+  esac
+}
+
+complete -F _dedpaste_completions dedpaste`);
+      }
+      
+      // Generate zsh completion script
+      if (options.zsh) {
+        console.log(`#compdef dedpaste
+
+_dedpaste() {
+  local -a commands
+  local -a main_opts
+  
+  commands=(
+    'keys:Manage encryption keys for secure communication'
+    'send:Create and send an encrypted paste to friends'
+    'get:Retrieve and decrypt a paste by URL or ID'
+    'completion:Generate shell completion script'
+  )
+  
+  main_opts=(
+    '(-t --temp)'{-t,--temp}'[Create a one-time paste that is deleted after being viewed]'
+    '--type[Specify the content type of the paste (e.g., application/json)]:content-type:(text/plain application/json text/html text/markdown application/xml application/javascript text/css)'
+    '(-f --file)'{-f,--file}'[Upload a file from the specified path instead of stdin]:file:_files'
+    '(-o --output)'{-o,--output}'[Print only the URL (without any additional text)]'
+    '(-e --encrypt)'{-e,--encrypt}'[Encrypt the content before uploading (requires key setup)]'
+    '(-c --copy)'{-c,--copy}'[Copy the URL to clipboard automatically]'
+    '--help[Show help message]'
+    '--version[Show version information]'
+  )
+  
+  _arguments -C \\
+    '1: :->command' \\
+    '*: :->args' && ret=0
+    
+  case $state in
+    (command)
+      _describe -t commands 'dedpaste commands' commands
+      _describe -t options 'dedpaste options' main_opts
+      ;;
+    (args)
+      case $line[1] in
+        (keys)
+          _arguments \\
+            '--interactive[Use interactive menu-driven mode for key management]' \\
+            '--list[List all your keys and friends keys with fingerprints]' \\
+            '--add-friend[Add a friends public key (requires --key-file)]:friend name:' \\
+            '--key-file[Path to key file for import/export operations]:key file:_files' \\
+            '--export[Export your public key to share with friends]' \\
+            '--remove[Remove a friends key from your keyring]:friend name:' \\
+            '--gen-key[Generate a new RSA key pair for encryption]' \\
+            '--my-key[Output your public key to the console for sharing]' \\
+            '--help[Show help message]'
+          ;;
+        (send)
+          _arguments \\
+            '(-t --temp)'{-t,--temp}'[Create a one-time paste that is deleted after being viewed]' \\
+            '--type[Specify the content type of the paste (e.g., application/json)]:content-type:(text/plain application/json text/html text/markdown application/xml application/javascript text/css)' \\
+            '(-f --file)'{-f,--file}'[Upload a file from the specified path instead of stdin]:file:_files' \\
+            '(-o --output)'{-o,--output}'[Print only the URL (without any additional text)]' \\
+            '(-e --encrypt)'{-e,--encrypt}'[Encrypt the content before uploading (requires key setup)]' \\
+            '--for[Encrypt for a specific friend (requires adding their key first)]:friend name:' \\
+            '--list-friends[List available friends you can encrypt messages for]' \\
+            '--key-file[Path to public key for encryption (alternative to stored keys)]:key file:_files' \\
+            '--gen-key[Generate a new key pair for encryption if you dont have one]' \\
+            '--interactive[Use interactive mode with guided prompts for message creation]' \\
+            '--debug[Debug mode: show encrypted content without uploading]' \\
+            '(-c --copy)'{-c,--copy}'[Copy the URL to clipboard automatically]' \\
+            '--help[Show help message]'
+          ;;
+        (get)
+          _arguments \\
+            '1:url or ID:' \\
+            '--key-file[Path to private key for decryption (if not using default key)]:key file:_files' \\
+            '--help[Show help message]'
+          ;;
+        (completion)
+          _arguments \\
+            '--bash[Output Bash completion script]' \\
+            '--zsh[Output Zsh completion script]' \\
+            '--install[Print installation instructions instead of the script]' \\
+            '--help[Show help message]'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_dedpaste "$@"`);
       }
     } catch (error) {
       console.error('Error:', error.message);
