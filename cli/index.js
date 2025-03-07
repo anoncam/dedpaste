@@ -10,7 +10,21 @@ import { createRequire } from 'module';
 import { promises as fsPromises } from 'fs';
 import { homedir } from 'os';
 import inquirer from 'inquirer';
-import clipboard from 'clipboardy';
+// Import clipboardy with error handling
+let clipboard;
+try {
+  clipboard = await import('clipboardy');
+  console.log('DEBUG: Successfully loaded clipboardy module');
+} catch (error) {
+  console.error(`Failed to load clipboardy: ${error.message}`);
+  // Fallback implementation if clipboard fails to load
+  clipboard = {
+    writeSync: (text) => {
+      console.error('Clipboard access is not available. URL could not be copied.');
+      console.log(`Manual copy: ${text}`);
+    }
+  };
+}
 
 // Import our new modules
 import {
@@ -357,7 +371,14 @@ Encryption:
         // Copy to clipboard if requested
         if (options.copy) {
           try {
-            clipboard.writeSync(url.trim());
+            const cleanUrl = url.trim();
+            console.log(`DEBUG: Send command - Attempting to copy URL to clipboard: "${cleanUrl}"`);
+            if (clipboard.default) {
+              clipboard.default.writeSync(cleanUrl);
+            } else {
+              clipboard.writeSync(cleanUrl);
+            }
+            console.log(`DEBUG: Send command - URL copied successfully`);
           } catch (error) {
             console.error(`Unable to copy to clipboard: ${error.message}`);
           }
@@ -611,7 +632,14 @@ program
           // Copy to clipboard if requested
           if (options.copy) {
             try {
-              clipboard.writeSync(url.trim());
+              const cleanUrl = url.trim();
+              console.log(`DEBUG: Encrypted command - Attempting to copy URL to clipboard: "${cleanUrl}"`);
+              if (clipboard.default) {
+                clipboard.default.writeSync(cleanUrl);
+              } else {
+                clipboard.writeSync(cleanUrl);
+              }
+              console.log(`DEBUG: Encrypted command - URL copied successfully`);
             } catch (error) {
               console.error(`Unable to copy to clipboard: ${error.message}`);
             }
@@ -662,7 +690,14 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
         // Copy to clipboard if requested
         if (options.copy) {
           try {
-            clipboard.writeSync(url.trim());
+            const cleanUrl = url.trim();
+            console.log(`DEBUG: Primary command - Attempting to copy URL to clipboard: "${cleanUrl}"`);
+            if (clipboard.default) {
+              clipboard.default.writeSync(cleanUrl);
+            } else {
+              clipboard.writeSync(cleanUrl);
+            }
+            console.log(`DEBUG: Primary command - URL copied successfully`);
           } catch (error) {
             console.error(`Unable to copy to clipboard: ${error.message}`);
           }
