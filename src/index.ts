@@ -386,24 +386,57 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
   if (metadata && metadata.isOneTime === true) {
     try {
       console.log(`[TEMP PASTE] Deleting one-time paste with ID: ${id}`);
-      // Delete immediately instead of scheduling it with waitUntil
+      // Delete immediately and ensure it completes before returning the response
       await env.PASTE_BUCKET.delete(id);
       console.log(`[TEMP PASTE] Immediate deletion of one-time paste ${id} successful`);
     } catch (error) {
-      // Log the error but still return the paste content
       console.error(`[TEMP PASTE] Error during immediate deletion of one-time paste ${id}: ${error}`);
-      // Schedule a retry for deletion in case the immediate deletion failed
-      ctx.waitUntil(
-        (async () => {
-          try {
-            console.log(`[TEMP PASTE] Attempting retry deletion for paste ${id}`);
-            await env.PASTE_BUCKET.delete(id);
-            console.log(`[TEMP PASTE] Retry deletion of one-time paste ${id} successful`);
-          } catch (retryError) {
-            console.error(`[TEMP PASTE] Retry deletion of one-time paste ${id} failed: ${retryError}`);
+      
+      // If the immediate deletion fails, try a second time and wait for it to complete
+      try {
+        console.log(`[TEMP PASTE] Attempting second deletion for paste ${id}`);
+        await env.PASTE_BUCKET.delete(id);
+        console.log(`[TEMP PASTE] Second deletion of one-time paste ${id} successful`);
+      } catch (secondError) {
+        console.error(`[TEMP PASTE] Second deletion of one-time paste ${id} failed: ${secondError}`);
+        
+        // Only as a last resort, schedule a retry deletion
+        ctx.waitUntil(
+          (async () => {
+            try {
+              console.log(`[TEMP PASTE] Attempting final retry deletion for paste ${id}`);
+              await env.PASTE_BUCKET.delete(id);
+              console.log(`[TEMP PASTE] Final retry deletion of one-time paste ${id} successful`);
+            } catch (retryError) {
+              console.error(`[TEMP PASTE] Final retry deletion of one-time paste ${id} failed: ${retryError}`);
+            }
+          })()
+        );
+        
+        // Return a special error message if we couldn't delete the paste after multiple attempts
+        return new Response('This one-time paste could not be properly processed. Please try again later.', { 
+          status: 500,
+          headers: {
+            'Content-Type': 'text/plain',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
           }
-        })()
-      );
+        });
+      }
+    }
+    
+    // Verify the paste is actually deleted before returning content
+    const verifyDeleted = await env.PASTE_BUCKET.head(id);
+    if (verifyDeleted !== null) {
+      console.error(`[TEMP PASTE] Paste ${id} still exists after deletion attempts`);
+      return new Response('This one-time paste could not be properly processed. Please try again later.', { 
+        status: 500,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        }
+      });
     }
   }
   
