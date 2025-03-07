@@ -379,15 +379,36 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
   }
   
-  // If it's a one-time paste, schedule a deletion
-  // Double-check that we only delete pastes that are explicitly marked as one-time
+  // Get the content buffer before deletion
+  const content = await paste.arrayBuffer();
+  
+  // If it's a one-time paste, delete it immediately before returning the response
   if (metadata && metadata.isOneTime === true) {
-    console.log(`Deleting one-time paste: ${id}`);
-    ctx.waitUntil(env.PASTE_BUCKET.delete(id));
+    try {
+      console.log(`[TEMP PASTE] Deleting one-time paste with ID: ${id}`);
+      // Delete immediately instead of scheduling it with waitUntil
+      await env.PASTE_BUCKET.delete(id);
+      console.log(`[TEMP PASTE] Immediate deletion of one-time paste ${id} successful`);
+    } catch (error) {
+      // Log the error but still return the paste content
+      console.error(`[TEMP PASTE] Error during immediate deletion of one-time paste ${id}: ${error}`);
+      // Schedule a retry for deletion in case the immediate deletion failed
+      ctx.waitUntil(
+        (async () => {
+          try {
+            console.log(`[TEMP PASTE] Attempting retry deletion for paste ${id}`);
+            await env.PASTE_BUCKET.delete(id);
+            console.log(`[TEMP PASTE] Retry deletion of one-time paste ${id} successful`);
+          } catch (retryError) {
+            console.error(`[TEMP PASTE] Retry deletion of one-time paste ${id} failed: ${retryError}`);
+          }
+        })()
+      );
+    }
   }
   
   // Return the paste content with robust caching headers
-  return new Response(paste.body, {
+  return new Response(content, {
     headers: {
       'Content-Type': metadata.contentType || 'text/plain',
       'Access-Control-Allow-Origin': '*',
