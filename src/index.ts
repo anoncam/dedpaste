@@ -379,43 +379,26 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
   }
   
-  // Get the content buffer before deletion
-  const content = await paste.arrayBuffer();
-  
-  // If it's a one-time paste, delete it immediately before returning the response
+  // First, mark this paste as accessed in our database
+  // to prevent concurrent retrieval from multiple clients
   if (metadata && metadata.isOneTime === true) {
     try {
-      console.log(`[TEMP PASTE] Deleting one-time paste with ID: ${id}`);
-      // Delete immediately and ensure it completes before returning the response
-      await env.PASTE_BUCKET.delete(id);
-      console.log(`[TEMP PASTE] Immediate deletion of one-time paste ${id} successful`);
-    } catch (error) {
-      console.error(`[TEMP PASTE] Error during immediate deletion of one-time paste ${id}: ${error}`);
+      // Create or update an access record to prevent multiple clients viewing the same paste
+      // We'll change the key to a format that indicates it's been accessed
+      const accessKey = `${id}-accessed`;
+      const accessInfo = {
+        accessTime: Date.now(),
+        isAccessed: true
+      };
       
-      // If the immediate deletion fails, try a second time and wait for it to complete
-      try {
-        console.log(`[TEMP PASTE] Attempting second deletion for paste ${id}`);
-        await env.PASTE_BUCKET.delete(id);
-        console.log(`[TEMP PASTE] Second deletion of one-time paste ${id} successful`);
-      } catch (secondError) {
-        console.error(`[TEMP PASTE] Second deletion of one-time paste ${id} failed: ${secondError}`);
-        
-        // Only as a last resort, schedule a retry deletion
-        ctx.waitUntil(
-          (async () => {
-            try {
-              console.log(`[TEMP PASTE] Attempting final retry deletion for paste ${id}`);
-              await env.PASTE_BUCKET.delete(id);
-              console.log(`[TEMP PASTE] Final retry deletion of one-time paste ${id} successful`);
-            } catch (retryError) {
-              console.error(`[TEMP PASTE] Final retry deletion of one-time paste ${id} failed: ${retryError}`);
-            }
-          })()
-        );
-        
-        // Return a special error message if we couldn't delete the paste after multiple attempts
-        return new Response('This one-time paste could not be properly processed. Please try again later.', { 
-          status: 500,
+      // Check if this paste has already been accessed
+      const alreadyAccessed = await env.PASTE_BUCKET.head(accessKey);
+      
+      if (alreadyAccessed !== null) {
+        console.log(`[TEMP PASTE] Paste ${id} was already accessed, rejecting second view`);
+        // This paste has already been retrieved once
+        return new Response('This one-time paste has already been viewed and is no longer available.', { 
+          status: 410, // Gone
           headers: {
             'Content-Type': 'text/plain',
             'Access-Control-Allow-Origin': '*',
@@ -423,12 +406,13 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
           }
         });
       }
-    }
-    
-    // Verify the paste is actually deleted before returning content
-    const verifyDeleted = await env.PASTE_BUCKET.head(id);
-    if (verifyDeleted !== null) {
-      console.error(`[TEMP PASTE] Paste ${id} still exists after deletion attempts`);
+      
+      // Mark this paste as accessed
+      await env.PASTE_BUCKET.put(accessKey, JSON.stringify(accessInfo));
+      console.log(`[TEMP PASTE] Marked paste ${id} as accessed at ${accessInfo.accessTime}`);
+    } catch (accessError) {
+      console.error(`[TEMP PASTE] Error marking paste ${id} as accessed: ${accessError}`);
+      // If we can't mark it as accessed, we should not proceed, to prevent multiple views
       return new Response('This one-time paste could not be properly processed. Please try again later.', { 
         status: 500,
         headers: {
@@ -438,6 +422,34 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
         }
       });
     }
+  }
+  
+  // Get the content buffer after ensuring this is the first access
+  const content = await paste.arrayBuffer();
+  
+  // Now that we've safely retrieved the content and marked it as accessed,
+  // we can schedule its deletion if it's a one-time paste
+  if (metadata && metadata.isOneTime === true) {
+    // Schedule deletion with waitUntil to ensure it happens after response is sent
+    ctx.waitUntil(
+      (async () => {
+        try {
+          console.log(`[TEMP PASTE] Deleting one-time paste with ID: ${id}`);
+          await env.PASTE_BUCKET.delete(id);
+          console.log(`[TEMP PASTE] Deletion of one-time paste ${id} successful`);
+        } catch (error) {
+          console.error(`[TEMP PASTE] Error during deletion of one-time paste ${id}: ${error}`);
+          // Try again after a short delay
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          try {
+            await env.PASTE_BUCKET.delete(id);
+            console.log(`[TEMP PASTE] Retry deletion of one-time paste ${id} successful`);
+          } catch (retryError) {
+            console.error(`[TEMP PASTE] Retry deletion of one-time paste ${id} failed: ${retryError}`);
+          }
+        }
+      })()
+    );
   }
   
   // Return the paste content with robust caching headers
