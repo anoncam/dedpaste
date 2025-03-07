@@ -1,47 +1,72 @@
 #!/usr/bin/env node
 
 import fetch from 'node-fetch';
-import fs from 'fs';
-import { promises as fsPromises } from 'fs';
-import path from 'path';
-import { homedir } from 'os';
-
-// Get the paste ID from command line arguments
-const pasteId = process.argv[2];
-if (!pasteId) {
-  console.error('Please provide a paste ID');
-  process.exit(1);
-}
+import crypto from 'crypto';
 
 // Default API URL - can be changed via environment variable
 const API_URL = process.env.DEDPASTE_API_URL || 'https://paste.d3d.dev';
 
-// Path to key database
-const KEY_DB_PATH = path.join(homedir(), '.dedpaste', 'keydb.json');
+// Function to create a temporary paste
+async function createTempPaste(content) {
+  const response = await fetch(`${API_URL}/temp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain',
+    },
+    body: content,
+  });
+  
+  return await response.text();
+}
 
-// Load key database
-async function loadKeyDatabase() {
-  try {
-    return JSON.parse(await fsPromises.readFile(KEY_DB_PATH, 'utf8'));
-  } catch (error) {
-    console.error(`Error loading key database: ${error.message}`);
-    return null;
+// Function to fetch a paste
+async function fetchPaste(url) {
+  const response = await fetch(url);
+  
+  if (response.status === 404) {
+    return { status: 404, content: 'Not found' };
+  }
+  
+  return { 
+    status: response.status,
+    content: await response.text(),
+    headers: Object.fromEntries(response.headers.entries())
+  };
+}
+
+// Main function to test temporary paste functionality
+async function testTempPaste() {
+  console.log('Creating temporary paste...');
+  const uniqueContent = `Test content ${crypto.randomBytes(8).toString('hex')}`;
+  console.log(`Content: ${uniqueContent}`);
+  
+  const pasteUrl = await createTempPaste(uniqueContent);
+  console.log(`Paste URL: ${pasteUrl}`);
+  
+  console.log('\nFetching paste for the first time...');
+  const firstFetch = await fetchPaste(pasteUrl);
+  console.log(`Status: ${firstFetch.status}`);
+  console.log(`Content: ${firstFetch.content}`);
+  console.log('Headers:', firstFetch.headers);
+  
+  console.log('\nWaiting 5 seconds...');
+  await new Promise(resolve => setTimeout(resolve, 5000));
+  
+  console.log('\nFetching paste for the second time...');
+  const secondFetch = await fetchPaste(pasteUrl);
+  console.log(`Status: ${secondFetch.status}`);
+  console.log(`Content: ${secondFetch.content}`);
+  
+  if (secondFetch.status === 404) {
+    console.log('\nSUCCESS: Temporary paste was deleted after viewing.');
+  } else {
+    console.log('\nFAILURE: Temporary paste still accessible after viewing.');
   }
 }
 
-// Fetch and display paste metadata with fingerprint comparison
-async function debugPasteMetadata(id) {
+// Debug fingerprints for encrypted pastes
+async function debugPasteFingerprint(id) {
   try {
-    // Load key database to compare fingerprints
-    const keyDb = await loadKeyDatabase();
-    if (!keyDb) {
-      console.error('Could not load key database for fingerprint comparison');
-      process.exit(1);
-    }
-
-    // Get self fingerprint
-    const selfFingerprint = keyDb.keys.self ? keyDb.keys.self.fingerprint : null;
-    
     // Determine the URL to fetch
     const fetchUrl = `${API_URL}/e/${id}`;
     
@@ -63,69 +88,7 @@ async function debugPasteMetadata(id) {
     // Parse the encrypted data to extract metadata
     try {
       const encryptedData = JSON.parse(contentBuffer.toString());
-      
-      console.log('\nEncrypted Paste Metadata:');
-      console.log('------------------------');
-      
-      // Display version
-      console.log(`Version: ${encryptedData.version}`);
-      
-      // Display metadata if available
-      if (encryptedData.metadata) {
-        console.log('\nMetadata:');
-        
-        if (encryptedData.metadata.sender) {
-          console.log(`Sender: ${encryptedData.metadata.sender}`);
-        }
-        
-        if (encryptedData.metadata.recipient) {
-          console.log('\nRecipient:');
-          console.log(`  Type: ${encryptedData.metadata.recipient.type}`);
-          if (encryptedData.metadata.recipient.name) {
-            console.log(`  Name: ${encryptedData.metadata.recipient.name}`);
-          }
-          
-          const pasteFingerprint = encryptedData.metadata.recipient.fingerprint;
-          if (pasteFingerprint) {
-            console.log(`  Fingerprint: ${pasteFingerprint}`);
-            
-            // Compare with self fingerprint
-            if (selfFingerprint) {
-              console.log(`\nYour fingerprint: ${selfFingerprint}`);
-              if (pasteFingerprint === selfFingerprint) {
-                console.log('\n✅ FINGERPRINT MATCH: This paste was encrypted with your public key!');
-                console.log('   The name mismatch is causing the decryption error.');
-              } else {
-                console.log('\n❌ FINGERPRINT MISMATCH: This paste was not encrypted with your public key.');
-                
-                // Check if it matches any friend's fingerprint
-                let matchFound = false;
-                for (const [friendName, friendData] of Object.entries(keyDb.keys.friends || {})) {
-                  if (friendData.fingerprint === pasteFingerprint) {
-                    console.log(`   It matches the fingerprint of your friend: ${friendName}`);
-                    matchFound = true;
-                    break;
-                  }
-                }
-                
-                if (!matchFound) {
-                  console.log('   It does not match any fingerprint in your key database.');
-                }
-              }
-            } else {
-              console.log('\nCould not find your fingerprint for comparison.');
-            }
-          }
-        }
-        
-        if (encryptedData.metadata.timestamp) {
-          console.log(`\nTimestamp: ${encryptedData.metadata.timestamp}`);
-          console.log(`Created: ${new Date(encryptedData.metadata.timestamp).toLocaleString()}`);
-        }
-      } else {
-        console.log('No metadata available (likely a version 1 encrypted paste)');
-      }
-      
+      console.log(JSON.stringify(encryptedData, null, 2));
     } catch (error) {
       console.error(`Error parsing encrypted data: ${error.message}`);
       console.error('This might not be a valid encrypted paste');
@@ -135,5 +98,20 @@ async function debugPasteMetadata(id) {
   }
 }
 
-// Run the function
-debugPasteMetadata(pasteId);
+// Handle command-line arguments
+const command = process.argv[2];
+const arg = process.argv[3];
+
+if (command === 'test-temp') {
+  testTempPaste().catch(error => {
+    console.error('Error:', error);
+  });
+} else if (command === 'debug-fingerprint' && arg) {
+  debugPasteFingerprint(arg).catch(error => {
+    console.error('Error:', error);
+  });
+} else {
+  console.log('Usage:');
+  console.log('  node debug-paste.js test-temp             Test temporary paste deletion');
+  console.log('  node debug-paste.js debug-fingerprint ID  Debug encrypted paste fingerprint');
+}
