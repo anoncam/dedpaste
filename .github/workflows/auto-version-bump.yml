@@ -80,3 +80,11 @@ jobs:
         run: |
           echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }}"
           echo "🚀 The release workflow will be triggered automatically by this change."
+      
+      # Create repository dispatch event to trigger the release workflow
+      - name: Trigger release workflow
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: version-bumped
+          client-payload: '{"version": "${{ steps.bump-version.outputs.new_version }}"}'

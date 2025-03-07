@@ -12,11 +12,13 @@ on:
       - completed
     branches:
       - main
+  repository_dispatch:
+    types: [version-bumped]
 
 jobs:
   check-version:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'repository_dispatch'
     permissions:
       contents: read
     outputs:
@@ -26,7 +28,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 5
+          fetch-depth: 10
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
 
       - name: Check for version bump in package.json
         id: check
@@ -54,35 +57,43 @@ jobs:
             echo "Previous version from HEAD^: $OLD_VERSION"
           
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
-            # For workflow_run events, we'll check the commits to see if there was a version bump
+            # For workflow_run events triggered by Auto Version Bump, assume there was a version change
             echo "This is a workflow_run event triggered by 'Auto Version Bump'"
             echo "Workflow run id: ${{ github.event.workflow_run.id }}"
             echo "Workflow run name: ${{ github.event.workflow_run.name }}"
             echo "Workflow run conclusion: ${{ github.event.workflow_run.conclusion }}"
-            echo "Checking the most recent commit..."
             
-            # Get the commit message of the most recent commit
-            COMMIT_MSG=$(git log -1 --pretty=%B)
-            echo "Most recent commit message: $COMMIT_MSG"
+            # List recent commits to debug
+            echo "Recent commits:"
+            git log -n 3 --pretty=format:"%H %s"
             
-            # See if it matches the version bump pattern
-            if echo "$COMMIT_MSG" | grep -q "Bump version to"; then
-              echo "This appears to be a version bump commit"
+            # Always set version_changed to true when triggered by Auto Version Bump workflow
+            echo "version_changed=true" >> $GITHUB_OUTPUT
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "Version will be published: $NEW_VERSION"
+            exit 0
+            
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            # For repository_dispatch events with version-bumped type
+            echo "This is a repository_dispatch event with version-bumped type"
+            
+            # Use the version from the client payload if available
+            if [ -n "${{ github.event.client_payload.version }}" ]; then
+              CLIENT_VERSION="${{ github.event.client_payload.version }}"
+              echo "Version from client payload: $CLIENT_VERSION"
               
-              # Get previous version from the commit before
-              OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version')
-              echo "Previous version from commit before bump: $OLD_VERSION"
-              
-              # Force version_changed to true for workflow_run events from Auto Version Bump
+              # Set outputs using client payload version
+              echo "version_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$CLIENT_VERSION" >> $GITHUB_OUTPUT
+              echo "Version will be published: $CLIENT_VERSION"
+            else
+              # Fallback to version in package.json
+              echo "Client payload version not found, using package.json version"
               echo "version_changed=true" >> $GITHUB_OUTPUT
               echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
               echo "Version will be published: $NEW_VERSION"
-              exit 0
-            else
-              echo "This does not appear to be triggered by a version bump commit"
-              echo "version_changed=false" >> $GITHUB_OUTPUT
-              exit 0
             fi
+            exit 0
           else
             echo "Unknown event type - cannot determine version change"
             echo "version_changed=false" >> $GITHUB_OUTPUT
@@ -113,10 +124,24 @@ jobs:
           echo "Version changed: ${{ needs.check-version.outputs.version_changed }}"
           echo "New version: ${{ needs.check-version.outputs.new_version }}"
           echo "Event name: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "Workflow run event details:"
+            echo "  - Workflow name: ${{ github.event.workflow_run.name }}"
+            echo "  - Workflow ID: ${{ github.event.workflow_run.id }}"
+            echo "  - Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+            echo "  - HEAD SHA: ${{ github.event.workflow_run.head_sha }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Repository dispatch event details:"
+            echo "  - Event type: ${{ github.event.action }}"
+            echo "  - Version: ${{ github.event.client_payload.version }}"
+          fi
           echo "================================"
         
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 10
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
