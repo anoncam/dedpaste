@@ -114,6 +114,9 @@ program
   // PGP options
   .option('--pgp-key <email-or-id>', 'Fetch and add a PGP key from a keyserver')
   .option('--pgp-name <name>', 'Custom name for the PGP key (optional)')
+  .option('--import-pgp-key <path>', 'Import a PGP private key for encryption/decryption')
+  .option('--pgp-passphrase <phrase>', 'Passphrase for PGP private key')
+  .option('--native-pgp', 'Use native PGP encryption instead of converting to PEM')
   // Keybase options
   .option('--keybase <username>', 'Fetch and add a Keybase user\'s PGP key')
   .option('--keybase-name <name>', 'Custom name for the Keybase user\'s key (optional)')
@@ -225,6 +228,60 @@ Key Storage:
         return;
       }
       
+      // Import a PGP private key
+      if (options.importPgpKey) {
+        // Check if passphrase was provided
+        if (!options.pgpPassphrase) {
+          console.error('Error: --pgp-passphrase is required when importing a PGP private key');
+          process.exit(1);
+        }
+        
+        try {
+          // Read the PGP private key file
+          const pgpPrivateKeyContent = await fsPromises.readFile(options.importPgpKey, 'utf8');
+          
+          // Import the PGP private key
+          console.log(`Importing PGP private key from ${options.importPgpKey}...`);
+          const result = await importPgpPrivateKey(pgpPrivateKeyContent, options.pgpPassphrase);
+          
+          // Save the private and public key to the PGP key directory
+          const { PGP_KEY_DIR } = await ensureDirectories();
+          const privateKeyPath = path.join(PGP_KEY_DIR, `private.pem`);
+          const publicKeyPath = path.join(PGP_KEY_DIR, `public.pem`);
+          
+          // Write the keys to files
+          await fsPromises.writeFile(privateKeyPath, result.privateKey);
+          await fsPromises.writeFile(publicKeyPath, result.publicKey);
+          
+          // Update the key database
+          const db = await loadKeyDatabase();
+          db.keys.pgp.self = {
+            private: privateKeyPath,
+            public: publicKeyPath,
+            original: options.importPgpKey,
+            fingerprint: result.keyId,
+            name: result.name,
+            email: result.email,
+            created: new Date().toISOString()
+          };
+          await saveKeyDatabase(db);
+          
+          console.log(`
+✓ Imported PGP private key:
+  - Name: ${result.name}
+  - Email: ${result.email || 'Not specified'}
+  - Key ID: ${result.keyId}
+  - Converted private key: ${privateKeyPath}
+  - Converted public key: ${publicKeyPath}
+  - Original PGP key: ${options.importPgpKey}
+`);
+        } catch (error) {
+          console.error(`Error importing PGP private key: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+      
       // Fetch and add a Keybase user's key
       if (options.keybase) {
         try {
@@ -309,6 +366,10 @@ program
   .option('--interactive', 'Use interactive mode with guided prompts for message creation')
   .option('--debug', 'Debug mode: show encrypted content without uploading')
   .option('-c, --copy', 'Copy the URL to clipboard automatically')
+  // PGP options
+  .option('--pgp', 'Use PGP encryption instead of hybrid RSA/AES')
+  .option('--pgp-key-file <path>', 'Use a specific PGP public key file for encryption')
+  .option('--pgp-armor', 'Output ASCII-armored PGP instead of binary format')
   .addHelpText('after', `
 Examples:
   $ echo "Secret message" | dedpaste send --encrypt                # Encrypt for yourself
@@ -317,9 +378,15 @@ Examples:
   $ dedpaste send --interactive --encrypt                          # Interactive encrypted message
   $ dedpaste send --list-friends                                   # List available recipients
   
+PGP Options:
+  $ echo "Secret" | dedpaste send --encrypt --pgp                  # Use PGP encryption
+  $ dedpaste send --encrypt --for alice@example.com --pgp          # Encrypt for PGP key
+  $ dedpaste send --pgp-key-file friend.asc --encrypt --pgp        # Use specific PGP key file
+  
 Encryption:
-  - Encryption uses RSA for key exchange and AES-256-GCM for content
-  - Each paste uses a different symmetric key for forward secrecy
+  - Standard encryption uses RSA for key exchange and AES-256-GCM for content
+  - PGP encryption (--pgp) uses OpenPGP standard compatible with GnuPG/GPG
+  - Each paste uses a different key for forward secrecy
   - Encrypted pastes include metadata about sender and recipient
   - Use --debug to test encryption without uploading
 `)
@@ -403,7 +470,22 @@ Encryption:
         
         // Encrypt the content
         try {
-          content = await encryptContent(content, recipientName);
+          // Check if PGP mode is requested
+          const usePgp = options.pgp;
+          
+          // If PGP key file is provided, read it and use it directly
+          if (options.pgpKeyFile) {
+            const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
+            content = await createPgpEncryptedMessage(content, pgpKeyContent, recipientName || 'recipient');
+          } else {
+            // Use the standard encryption flow with PGP option
+            content = await encryptContent(content, recipientName, usePgp);
+          }
+          
+          // Log PGP mode if used
+          if (usePgp || options.pgpKeyFile) {
+            console.log('Using PGP encryption');
+          }
           
           // Set content type to application/json for encrypted content
           contentType = 'application/json';
@@ -504,12 +586,18 @@ program
   .description('Retrieve and decrypt a paste by URL or ID')
   .argument('<url-or-id>', 'URL or ID of the paste to retrieve (e.g., https://paste.d3d.dev/AbCdEfGh or just AbCdEfGh)')
   .option('--key-file <path>', 'Path to private key for decryption (if not using default key)')
+  .option('--pgp-key-file <path>', 'Path to PGP private key for decryption')
+  .option('--pgp-passphrase <passphrase>', 'Passphrase for PGP private key')
   .addHelpText('after', `
 Examples:
   $ dedpaste get https://paste.d3d.dev/AbCdEfGh        # Get a regular paste by URL
   $ dedpaste get AbCdEfGh                              # Get a regular paste by ID
   $ dedpaste get https://paste.d3d.dev/e/AbCdEfGh      # Get and decrypt an encrypted paste
   $ dedpaste get e/AbCdEfGh                            # Get and decrypt an encrypted paste by ID
+  
+PGP Decryption:
+  $ dedpaste get e/AbCdEfGh --pgp-key-file my.pgp      # Decrypt with PGP private key
+  $ dedpaste get e/AbCdEfGh --pgp-key-file my.pgp --pgp-passphrase "secret"
   
 URL Format:
   - Regular pastes: https://paste.d3d.dev/{id}
@@ -518,6 +606,7 @@ URL Format:
   
 Decryption:
   - Encrypted pastes are automatically decrypted if you have the correct private key
+  - PGP encrypted pastes will require a PGP private key and passphrase
   - Metadata about sender and creation time is displayed when available
   - One-time pastes are deleted from the server after viewing
 `)
@@ -578,16 +667,57 @@ Decryption:
         console.log('⚠️  This paste is encrypted');
         
         try {
-          const result = await decryptContent(contentBuffer);
+          let result;
           
-          // Display metadata if available
-          if (result.metadata && result.metadata.version === 2) {
-            if (result.metadata.sender && result.metadata.sender !== 'self') {
-              console.log(`Sender: ${result.metadata.sender}`);
+          // Check if PGP key file is provided
+          if (options.pgpKeyFile) {
+            // Use PGP decryption
+            console.log('Using PGP decryption');
+            
+            // Check for passphrase
+            if (!options.pgpPassphrase) {
+              console.error('Error: --pgp-passphrase is required when using --pgp-key-file');
+              process.exit(1);
             }
             
-            if (result.metadata.timestamp) {
-              console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
+            // Decrypt with PGP
+            result = await decryptContent(contentBuffer, options.pgpKeyFile, options.pgpPassphrase);
+          } else {
+            // Use standard decryption
+            result = await decryptContent(contentBuffer);
+          }
+          
+          // Display metadata if available
+          if (result.metadata) {
+            // Handle version 2 (standard RSA/AES encryption)
+            if (result.metadata.version === 2) {
+              if (result.metadata.sender && result.metadata.sender !== 'self') {
+                console.log(`Sender: ${result.metadata.sender}`);
+              }
+              
+              if (result.metadata.timestamp) {
+                console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
+              }
+            } 
+            // Handle PGP-specific format (version 3)
+            else if (result.metadata.pgp) {
+              console.log(`PGP encrypted message`);
+              
+              if (result.metadata.recipient && result.metadata.recipient.name) {
+                console.log(`Recipient: ${result.metadata.recipient.name}`);
+              }
+              
+              if (result.metadata.recipient && result.metadata.recipient.email) {
+                console.log(`Email: ${result.metadata.recipient.email}`);
+              }
+              
+              if (result.metadata.recipient && result.metadata.recipient.keyId) {
+                console.log(`Key ID: ${result.metadata.recipient.keyId}`);
+              }
+              
+              if (result.metadata.timestamp) {
+                console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
+              }
             }
           }
           
@@ -681,7 +811,22 @@ program
         try {
           // Encrypt the content
           try {
-            content = await encryptContent(content);
+            // Check if PGP mode is requested
+            const usePgp = options.pgp;
+            
+            // If PGP key file is provided, read it and use it directly
+            if (options.pgpKeyFile) {
+              const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
+              content = await createPgpEncryptedMessage(content, pgpKeyContent, 'self');
+            } else {
+              // Use the standard encryption flow with PGP option
+              content = await encryptContent(content, null, usePgp);
+            }
+            
+            // Log PGP mode if used
+            if (usePgp || options.pgpKeyFile) {
+              console.log('Using PGP encryption');
+            }
             
             // Set content type to application/json for encrypted content
             contentType = 'application/json';

@@ -2,26 +2,52 @@
 import crypto from 'crypto';
 import { promises as fsPromises } from 'fs';
 import { getKey, updateLastUsed } from './keyManager.js';
+import { createPgpEncryptedMessage, decryptPgpMessage } from './pgpUtils.js';
 
 // Encrypt content for a specific recipient
-async function encryptContent(content, recipientName = null) {
+async function encryptContent(content, recipientName = null, usePgp = false) {
   try {
     let publicKey;
     let recipientInfo;
+    let keyType = 'standard';
     
     if (recipientName) {
-      // Encrypt for a friend
-      const friendKey = await getKey('friend', recipientName);
+      // Try to find the key in any key store (friend, PGP, or Keybase)
+      const friendKey = await getKey('any', recipientName);
       if (!friendKey) {
-        throw new Error(`Friend "${recipientName}" not found in key database`);
+        throw new Error(`Recipient "${recipientName}" not found in key database`);
       }
       
-      publicKey = await fsPromises.readFile(friendKey.public, 'utf8');
-      recipientInfo = {
-        type: 'friend',
-        name: recipientName,
-        fingerprint: friendKey.fingerprint
-      };
+      if (friendKey.type === 'pgp') {
+        keyType = 'pgp';
+        publicKey = await fsPromises.readFile(friendKey.path, 'utf8');
+        
+        recipientInfo = {
+          type: 'pgp',
+          name: recipientName,
+          fingerprint: friendKey.fingerprint,
+          email: friendKey.email
+        };
+      } else if (friendKey.type === 'keybase') {
+        keyType = 'pgp'; // Keybase keys are also PGP keys
+        publicKey = await fsPromises.readFile(friendKey.path, 'utf8');
+        
+        recipientInfo = {
+          type: 'keybase',
+          name: recipientName,
+          fingerprint: friendKey.fingerprint,
+          username: friendKey.username,
+          email: friendKey.email
+        };
+      } else {
+        // Standard RSA key
+        publicKey = await fsPromises.readFile(friendKey.public, 'utf8');
+        recipientInfo = {
+          type: 'friend',
+          name: recipientName,
+          fingerprint: friendKey.fingerprint
+        };
+      }
       
       // Update last used timestamp
       await updateLastUsed(recipientName);
@@ -39,6 +65,12 @@ async function encryptContent(content, recipientName = null) {
       };
     }
     
+    // If usePgp is true or the key is a PGP key, use PGP encryption
+    if (usePgp || keyType === 'pgp') {
+      return await createPgpEncryptedMessage(content, publicKey, recipientName);
+    }
+    
+    // Otherwise use standard RSA/AES hybrid encryption
     // Generate a random symmetric key
     const symmetricKey = crypto.randomBytes(32); // 256 bits for AES-256
     const iv = crypto.randomBytes(16); // 128 bits for AES IV
@@ -65,7 +97,7 @@ async function encryptContent(content, recipientName = null) {
     
     // Combine everything into a single structure with metadata
     const encryptedData = {
-      version: 2, // New version with metadata
+      version: 2, // Standard version with metadata
       metadata: {
         sender: 'self',
         recipient: recipientInfo,
@@ -85,7 +117,7 @@ async function encryptContent(content, recipientName = null) {
 }
 
 // Decrypt content
-async function decryptContent(encryptedBuffer) {
+async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPassphrase = null) {
   try {
     // Parse the encrypted data
     const encryptedData = JSON.parse(encryptedBuffer.toString());
@@ -95,8 +127,31 @@ async function decryptContent(encryptedBuffer) {
       // Legacy format - try to decrypt with personal key
       return decryptLegacyContent(encryptedData);
     } else if (encryptedData.version === 2) {
-      // New format with metadata
+      // Standard format with metadata
       return decryptV2Content(encryptedData);
+    } else if (encryptedData.version === 3) {
+      // PGP encrypted format
+      if (!pgpPrivateKeyPath) {
+        // Try to find the user's PGP private key in pgp directory
+        const selfKey = await getKey('self', null, 'pgp');
+        if (!selfKey) {
+          throw new Error('PGP encrypted message detected but no PGP private key found.');
+        }
+        pgpPrivateKeyPath = selfKey.private;
+      }
+      
+      // Prompt for passphrase if not provided
+      if (!pgpPassphrase) {
+        // In a CLI context, we'd prompt for the passphrase
+        // For now we'll throw an error requesting it
+        throw new Error('PGP passphrase required for decryption. Please provide with --pgp-passphrase option.');
+      }
+      
+      // Read the PGP private key
+      const privateKeyContent = await fsPromises.readFile(pgpPrivateKeyPath, 'utf8');
+      
+      // Decrypt with PGP
+      return await decryptPgpMessage(encryptedBuffer, privateKeyContent, pgpPassphrase);
     } else {
       throw new Error(`Unsupported encryption version: ${encryptedData.version}`);
     }
