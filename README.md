@@ -527,18 +527,21 @@ The key database (`keydb.json`) tracks:
 
 ## PGP and Keybase Integration Guide
 
-DedPaste provides deep integration with PGP keyservers and Keybase for enhanced key management and identity verification.
+DedPaste provides deep integration with PGP keyservers and Keybase for enhanced key management and identity verification. With these features, you can leverage existing PGP keys or Keybase identities to securely share encrypted content.
 
-### Using PGP Keyserver Integration
+### Comprehensive PGP Integration
 
-#### Fetching PGP Keys
+#### Adding PGP Keys from Keyservers
 
 ```bash
 # Add a PGP key by email address
 dedpaste keys --pgp-key user@example.com
 
-# Add a PGP key by key ID (with 0x prefix)
-dedpaste keys --pgp-key 0x1234ABCD
+# Add a PGP key by key ID
+dedpaste keys --pgp-key 1234ABCD
+
+# Add a PGP key by full fingerprint
+dedpaste keys --pgp-key D6263DD69C2E9A472CC40FAC0D83AE44DE87A5F6
 
 # Add a PGP key with a custom name
 dedpaste keys --pgp-key user@example.com --pgp-name alice
@@ -548,8 +551,25 @@ The CLI will:
 1. Search multiple public keyservers (keys.openpgp.org, keyserver.ubuntu.com, pgp.mit.edu)
 2. Download the public key if found
 3. Extract metadata (name, email, key ID)
-4. Store the key with fingerprint information
-5. Add it to your key database
+4. Store the key under the email address for easy identification
+5. Add it to your key database with fingerprint information
+
+DedPaste automatically prioritizes using email addresses as identifiers for PGP keys when available, making them easier to reference in encryption commands.
+
+#### Importing Existing PGP Keys
+
+```bash
+# Import a PGP private key (for decryption)
+dedpaste keys --import-pgp-key path/to/private.pgp --pgp-passphrase "your passphrase"
+
+# Import a PGP public key file
+dedpaste keys --add-friend pgp-user --key-file path/to/public.asc
+```
+
+When importing PGP private keys:
+- The key is securely stored in `~/.dedpaste/pgp/`
+- The passphrase is only used during import and is not stored
+- The key is converted to a format compatible with dedpaste
 
 #### Verifying PGP Keys
 
@@ -558,14 +578,46 @@ The CLI will:
 dedpaste keys --list
 ```
 
-The output will show the PGP key fingerprint, which you can use to verify the key's authenticity with the sender through a different channel.
+The output will show:
+- The key name or email address
+- The fingerprint for verification
+- When the key was last used
 
-#### Encrypting to PGP Keys
+You should always verify the fingerprint with the sender through a separate secure channel to ensure the key's authenticity.
+
+#### Using PGP Encryption
+
+DedPaste supports two approaches to PGP encryption:
+
+1. **Standard Hybrid Encryption** (default):
+   ```bash
+   # Encrypt for a PGP key recipient using RSA/AES hybrid encryption
+   echo "Secret message" | dedpaste send --encrypt --for user@example.com
+   ```
+
+2. **Native PGP Encryption**:
+   ```bash
+   # Use direct OpenPGP encryption (compatible with GnuPG/GPG)
+   echo "Secret message" | dedpaste send --encrypt --for user@example.com --pgp
+   
+   # Use a specific PGP key file directly
+   echo "Secret message" | dedpaste send --encrypt --pgp-key-file path/to/recipient.asc --pgp
+   ```
+
+#### Decrypting PGP Messages
 
 ```bash
-# Encrypt a message for a PGP key recipient
-echo "Secret message" | dedpaste send --encrypt --for user@example.com
+# Decrypt a PGP-encrypted paste with your default private key
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh
+
+# Decrypt with a specific PGP private key
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --pgp-key-file path/to/private.pgp --pgp-passphrase "passphrase"
 ```
+
+When a paste is encrypted with native PGP:
+- The CLI automatically detects the encryption format
+- It displays metadata about the recipient and key ID
+- It securely handles passphrase entry and decryption
 
 ### Using Keybase Integration
 
