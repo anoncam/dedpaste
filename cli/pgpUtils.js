@@ -806,10 +806,58 @@ async function createPgpEncryptedMessage(content, pgpPublicKeyString, recipientN
   try {
     // Parse recipient key to get metadata
     const publicKey = await openpgp.readKey({ armoredKey: pgpPublicKeyString });
-    const keyId = publicKey.getKeyId().toHex();
-    const userId = publicKey.users[0]?.userId || {};
-    const name = userId.name || recipientName || 'unknown';
-    const email = userId.email || null;
+    
+    // Get key ID using the primary key (different method in openpgp v6)
+    let keyId = '';
+    try {
+      // First try using the primary key's keyID property
+      if (publicKey.keyID) {
+        keyId = publicKey.keyID.toHex ? publicKey.keyID.toHex() : publicKey.keyID.toString('hex');
+      } 
+      // Try getting from primary key
+      else if (publicKey.primaryKey && publicKey.primaryKey.keyID) {
+        keyId = publicKey.primaryKey.keyID.toHex ? publicKey.primaryKey.keyID.toHex() : publicKey.primaryKey.keyID.toString('hex');
+      }
+      // If all else fails, use the fingerprint
+      else if (publicKey.fingerprint) {
+        keyId = publicKey.fingerprint;
+      }
+      else {
+        console.log('Unable to extract key ID, using placeholder');
+        keyId = 'unknown-key-id';
+      }
+    } catch (keyIdError) {
+      console.log(`Error extracting key ID: ${keyIdError.message}, using placeholder`);
+      keyId = 'unknown-key-id';
+    }
+    
+    // Extract user ID information
+    let name = recipientName || 'unknown';
+    let email = null;
+    
+    try {
+      if (publicKey.users && publicKey.users.length > 0) {
+        const firstUser = publicKey.users[0];
+        if (firstUser.userID) {
+          // Parse the userID which typically has format: "Name <email@example.com>"
+          const userIDText = firstUser.userID.userID || firstUser.userID.toString();
+          const emailMatch = userIDText.match(/<([^>]+)>/);
+          if (emailMatch && emailMatch[1]) {
+            email = emailMatch[1];
+          }
+          
+          // If we have a name in the key and no recipient name was provided, use it
+          if (!recipientName) {
+            const nameMatch = userIDText.match(/^([^<]+)</);
+            if (nameMatch && nameMatch[1]) {
+              name = nameMatch[1].trim();
+            }
+          }
+        }
+      }
+    } catch (userIdError) {
+      console.log(`Error extracting user information: ${userIdError.message}`);
+    }
     
     // Encrypt the content directly with PGP
     const encryptedContent = await encryptWithPgp(content, pgpPublicKeyString);
@@ -821,7 +869,7 @@ async function createPgpEncryptedMessage(content, pgpPublicKeyString, recipientN
         sender: 'self',
         recipient: {
           type: 'pgp',
-          name: recipientName || name,
+          name: name,
           email: email,
           keyId: keyId,
           fingerprint: keyId, // Using keyId as fingerprint for compatibility

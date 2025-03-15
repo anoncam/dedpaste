@@ -84,6 +84,20 @@ async function encryptContent(content, recipientName = null, usePgp = false) {
     // Encrypt the symmetric key with the recipient's public key
     let encryptedSymmetricKey;
     try {
+      // Check if the public key is in PEM format
+      if (!publicKey.includes('-----BEGIN PUBLIC KEY-----') && 
+          !publicKey.includes('-----BEGIN RSA PUBLIC KEY-----')) {
+        console.log('Public key is not in expected PEM format, attempting to convert...');
+        
+        // Try to parse it as a PGP key and extract the RSA key
+        if (publicKey.includes('-----BEGIN PGP PUBLIC KEY BLOCK-----')) {
+          throw new Error('PGP key detected. For PGP keys, use the --pgp flag to enable PGP encryption mode.');
+        } else {
+          throw new Error('Unsupported key format. Key must be in PEM format.');
+        }
+      }
+      
+      console.log('Using RSA encryption with PEM format public key');
       encryptedSymmetricKey = crypto.publicEncrypt(
         {
           key: publicKey,

@@ -491,6 +491,13 @@ Encryption:
           contentType = 'application/json';
         } catch (error) {
           console.error(`Encryption failed: ${error.message}`);
+          
+          // Provide helpful suggestions for common errors
+          if (error.message.includes('PGP key detected') && !options.pgp) {
+            console.log('\nSuggestion: This key appears to be a PGP key. Try adding the --pgp flag:');
+            console.log(`dedpaste send --encrypt --for ${recipientName} --pgp`);
+          }
+          
           process.exit(1);
         }
       } else {
