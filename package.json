@@ -55,7 +55,9 @@
     "clipboardy": "^4.0.0",
     "commander": "^13.1.0",
     "inquirer": "^9.2.15",
+    "keybase-api": "^0.0.1",
     "mime-types": "^2.1.35",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "openpgp": "^6.1.0"
   }
 }

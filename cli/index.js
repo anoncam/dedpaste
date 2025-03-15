@@ -26,14 +26,16 @@ try {
   };
 }
 
-// Import our new modules
+// Import our core modules
 import {
   generateKeyPair,
   addFriendKey,
   listKeys,
   getKey,
   removeKey,
-  updateLastUsed
+  updateLastUsed,
+  addPgpKey,
+  addKeybaseKey
 } from './keyManager.js';
 
 import {
@@ -49,6 +51,20 @@ import {
   interactiveExportKey,
   interactiveSend
 } from './interactiveMode.js';
+
+// Import PGP and Keybase utilities
+import {
+  fetchPgpKey,
+  importPgpKey,
+  addPgpKeyFromServer
+} from './pgpUtils.js';
+
+import {
+  fetchKeybaseUser,
+  fetchKeybasePgpKey,
+  verifyKeybaseProofs,
+  addKeybaseKey as fetchAndAddKeybaseKey
+} from './keybaseUtils.js';
 
 const require = createRequire(import.meta.url);
 const packageJson = require('../package.json');
@@ -95,17 +111,36 @@ program
   .option('--remove <name>', 'Remove a friend\'s key from your keyring')
   .option('--gen-key', 'Generate a new RSA key pair for encryption')
   .option('--my-key', 'Output your public key to the console for sharing')
+  // PGP options
+  .option('--pgp-key <email-or-id>', 'Fetch and add a PGP key from a keyserver')
+  .option('--pgp-name <name>', 'Custom name for the PGP key (optional)')
+  // Keybase options
+  .option('--keybase <username>', 'Fetch and add a Keybase user\'s PGP key')
+  .option('--keybase-name <name>', 'Custom name for the Keybase user\'s key (optional)')
+  .option('--no-verify', 'Skip verification of Keybase proofs')
   .addHelpText('after', `
 Examples:
-  $ dedpaste keys --gen-key                         # Generate a new key pair
-  $ dedpaste keys --list                            # List all your keys
+  $ dedpaste keys --gen-key                               # Generate a new key pair
+  $ dedpaste keys --list                                  # List all your keys
   $ dedpaste keys --add-friend alice --key-file alice_public.pem  # Add a friend's key
-  $ dedpaste keys --my-key                          # Display your public key
-  $ dedpaste keys --interactive                     # Use interactive mode
+  $ dedpaste keys --my-key                                # Display your public key
+  $ dedpaste keys --interactive                           # Use interactive mode
+  
+PGP Integration:
+  $ dedpaste keys --pgp-key user@example.com              # Add a PGP key from keyservers
+  $ dedpaste keys --pgp-key 0x1234ABCD                    # Add a PGP key using key ID
+  $ dedpaste keys --pgp-key user@example.com --pgp-name alice  # Add with custom name
+  
+Keybase Integration:
+  $ dedpaste keys --keybase username                      # Add a Keybase user's key
+  $ dedpaste keys --keybase username --keybase-name bob   # Add with custom name
+  $ dedpaste keys --keybase username --no-verify          # Skip verification of proofs
   
 Key Storage:
   - Your keys are stored in ~/.dedpaste/keys/
   - Friend keys are stored in ~/.dedpaste/friends/
+  - PGP keys are stored in ~/.dedpaste/pgp/
+  - Keybase keys are stored in ~/.dedpaste/keybase/
   - Key database is at ~/.dedpaste/keydb.json
 `)
   .action(async (options) => {
@@ -155,15 +190,63 @@ Key Storage:
       // Remove a key
       if (options.remove) {
         try {
-          const success = await removeKey('friend', options.remove);
+          // Try to remove from any collection
+          const success = await removeKey('any', options.remove);
           if (success) {
             console.log(`Removed ${options.remove}'s key successfully`);
           } else {
-            console.error(`Friend "${options.remove}" not found`);
+            console.error(`Key "${options.remove}" not found`);
             process.exit(1);
           }
         } catch (error) {
           console.error(`Error removing key: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+      
+      // Fetch and add a PGP key from keyservers
+      if (options.pgpKey) {
+        try {
+          console.log(`Fetching PGP key for "${options.pgpKey}" from keyservers...`);
+          const name = options.pgpName || options.pgpKey;
+          const result = await addPgpKeyFromServer(options.pgpKey, name);
+          console.log(`
+✓ Added PGP key:
+  - Name: ${result.name}
+  - Email: ${result.email || 'Not specified'}
+  - Key ID: ${result.keyId}
+  - Stored at: ${result.path}
+`);
+        } catch (error) {
+          console.error(`Error fetching PGP key: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+      
+      // Fetch and add a Keybase user's key
+      if (options.keybase) {
+        try {
+          console.log(`Fetching Keybase key for user "${options.keybase}"...`);
+          
+          if (options.verify) {
+            console.log('Verifying user proofs on Keybase...');
+          }
+          
+          const name = options.keybaseName || `keybase:${options.keybase}`;
+          const result = await fetchAndAddKeybaseKey(options.keybase, name, options.verify);
+          
+          console.log(`
+✓ Added Keybase key:
+  - Name: ${result.name}
+  - Keybase username: ${result.username}
+  - Email: ${result.email || 'Not specified'}
+  - Key ID: ${result.keyId}
+  - Stored at: ${result.path}
+`);
+        } catch (error) {
+          console.error(`Error fetching Keybase key: ${error.message}`);
           process.exit(1);
         }
         return;

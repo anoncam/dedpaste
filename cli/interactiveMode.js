@@ -65,6 +65,44 @@ async function interactiveListKeys() {
     console.log('\n  No friend keys found. Add one with "dedpaste keys add-friend"');
   }
   
+  // PGP keys
+  const pgpNames = Object.keys(db.keys.pgp || {});
+  if (pgpNames.length > 0) {
+    console.log('\n  PGP Keys:');
+    for (const name of pgpNames) {
+      const pgp = db.keys.pgp[name];
+      const lastUsed = new Date(pgp.last_used).toLocaleString();
+      console.log(`  - ${name} (PGP, last used: ${lastUsed})`);
+      console.log(`    Fingerprint: ${pgp.fingerprint}`);
+      if (pgp.email) {
+        console.log(`    Email: ${pgp.email}`);
+      }
+    }
+  }
+  
+  // Keybase keys
+  const keybaseNames = Object.keys(db.keys.keybase || {});
+  if (keybaseNames.length > 0) {
+    console.log('\n  Keybase Keys:');
+    for (const name of keybaseNames) {
+      const kb = db.keys.keybase[name];
+      const lastUsed = new Date(kb.last_used).toLocaleString();
+      console.log(`  - ${name} (Keybase, last used: ${lastUsed})`);
+      console.log(`    Username: ${kb.username}`);
+      console.log(`    Fingerprint: ${kb.fingerprint}`);
+      if (kb.email) {
+        console.log(`    Email: ${kb.email}`);
+      }
+    }
+  }
+  
+  if (friendNames.length === 0 && pgpNames.length === 0 && keybaseNames.length === 0) {
+    console.log('\n  No recipient keys found. Add keys using:');
+    console.log('  - dedpaste keys --add-friend <name> --key-file <path>');
+    console.log('  - dedpaste keys --pgp-key <email-or-id>');
+    console.log('  - dedpaste keys --keybase <username>');
+  }
+  
   return { success: true };
 }
 
@@ -263,9 +301,27 @@ async function interactiveSend() {
   const db = await listKeys();
   const choices = [{ name: 'Yourself (self)', value: null }];
   
+  // Add regular friends
   const friendNames = Object.keys(db.keys.friends);
   for (const name of friendNames) {
-    choices.push({ name: name, value: name });
+    choices.push({ name: `Friend: ${name}`, value: name });
+  }
+  
+  // Add PGP keys if available
+  if (db.keys.pgp) {
+    const pgpNames = Object.keys(db.keys.pgp);
+    for (const name of pgpNames) {
+      const email = db.keys.pgp[name].email ? ` (${db.keys.pgp[name].email})` : '';
+      choices.push({ name: `PGP: ${name}${email}`, value: name });
+    }
+  }
+  
+  // Add Keybase keys if available
+  if (db.keys.keybase) {
+    const keybaseNames = Object.keys(db.keys.keybase);
+    for (const name of keybaseNames) {
+      choices.push({ name: `Keybase: ${name} (${db.keys.keybase[name].username})`, value: name });
+    }
   }
   
   const { recipient } = await inquirer.prompt([{

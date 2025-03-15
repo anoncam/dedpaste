@@ -10,12 +10,16 @@ import inquirer from 'inquirer';
 const DEFAULT_KEY_DIR = path.join(homedir(), '.dedpaste', 'keys');
 const FRIENDS_KEY_DIR = path.join(homedir(), '.dedpaste', 'friends');
 const KEY_DB_PATH = path.join(homedir(), '.dedpaste', 'keydb.json');
+const PGP_KEY_DIR = path.join(homedir(), '.dedpaste', 'pgp');
+const KEYBASE_KEY_DIR = path.join(homedir(), '.dedpaste', 'keybase');
 
 // Ensure directories exist
 async function ensureDirectories() {
   await fsPromises.mkdir(DEFAULT_KEY_DIR, { recursive: true });
   await fsPromises.mkdir(FRIENDS_KEY_DIR, { recursive: true });
-  return { DEFAULT_KEY_DIR, FRIENDS_KEY_DIR };
+  await fsPromises.mkdir(PGP_KEY_DIR, { recursive: true });
+  await fsPromises.mkdir(KEYBASE_KEY_DIR, { recursive: true });
+  return { DEFAULT_KEY_DIR, FRIENDS_KEY_DIR, PGP_KEY_DIR, KEYBASE_KEY_DIR };
 }
 
 // Initialize key database if it doesn't exist
@@ -24,7 +28,9 @@ async function initKeyDatabase() {
     const defaultDb = {
       keys: {
         self: null,
-        friends: {}
+        friends: {},
+        pgp: {},
+        keybase: {}
       },
       default_friend: null,
       last_used: null
@@ -34,7 +40,18 @@ async function initKeyDatabase() {
     return defaultDb;
   }
   
-  return JSON.parse(await fsPromises.readFile(KEY_DB_PATH, 'utf8'));
+  // Read existing database
+  const db = JSON.parse(await fsPromises.readFile(KEY_DB_PATH, 'utf8'));
+  
+  // Ensure new properties exist (for upgrades)
+  if (!db.keys.pgp) {
+    db.keys.pgp = {};
+  }
+  if (!db.keys.keybase) {
+    db.keys.keybase = {};
+  }
+  
+  return db;
 }
 
 // Load key database
@@ -134,6 +151,16 @@ async function getKey(type, name) {
     return db.keys.self;
   } else if (type === 'friend') {
     return db.keys.friends[name];
+  } else if (type === 'pgp') {
+    return db.keys.pgp[name];
+  } else if (type === 'keybase') {
+    return db.keys.keybase[name];
+  } else if (type === 'any' && name) {
+    // Try to find the key in any of the collections
+    return db.keys.friends[name] || 
+           db.keys.pgp[name] || 
+           db.keys.keybase[name] || 
+           null;
   }
   
   return null;
@@ -158,6 +185,33 @@ async function removeKey(type, name) {
     
     await saveKeyDatabase(db);
     return true;
+  } else if (type === 'pgp' && db.keys.pgp[name]) {
+    // Remove the key file
+    await fsPromises.unlink(db.keys.pgp[name].path);
+    
+    // Remove from database
+    delete db.keys.pgp[name];
+    
+    await saveKeyDatabase(db);
+    return true;
+  } else if (type === 'keybase' && db.keys.keybase[name]) {
+    // Remove the key file
+    await fsPromises.unlink(db.keys.keybase[name].path);
+    
+    // Remove from database
+    delete db.keys.keybase[name];
+    
+    await saveKeyDatabase(db);
+    return true;
+  } else if (type === 'any') {
+    // Try to remove from any collection
+    if (db.keys.friends[name]) {
+      return await removeKey('friend', name);
+    } else if (db.keys.pgp[name]) {
+      return await removeKey('pgp', name);
+    } else if (db.keys.keybase[name]) {
+      return await removeKey('keybase', name);
+    }
   }
   
   return false;
@@ -174,16 +228,77 @@ async function updateLastUsed(name) {
   }
 }
 
+/**
+ * Add a PGP key to the database
+ * @param {string} name - Name for the key
+ * @param {Object} keyInfo - Key information
+ * @returns {Promise<string>} - Path to the stored key
+ */
+async function addPgpKey(name, keyInfo) {
+  const { PGP_KEY_DIR } = await ensureDirectories();
+  const keyPath = path.join(PGP_KEY_DIR, `${name}.asc`);
+  
+  // Write key to file
+  await fsPromises.writeFile(keyPath, keyInfo.key);
+  
+  // Update key database
+  const db = await loadKeyDatabase();
+  db.keys.pgp[name] = {
+    path: keyPath,
+    type: 'pgp',
+    fingerprint: keyInfo.keyId,
+    email: keyInfo.email,
+    added: new Date().toISOString(),
+    last_used: new Date().toISOString()
+  };
+  
+  await saveKeyDatabase(db);
+  return keyPath;
+}
+
+/**
+ * Add a Keybase key to the database
+ * @param {string} name - Name for the key
+ * @param {Object} keyInfo - Key information
+ * @returns {Promise<string>} - Path to the stored key
+ */
+async function addKeybaseKey(name, keyInfo) {
+  const { KEYBASE_KEY_DIR } = await ensureDirectories();
+  const keyPath = path.join(KEYBASE_KEY_DIR, `${name}.asc`);
+  
+  // Write key to file
+  await fsPromises.writeFile(keyPath, keyInfo.key);
+  
+  // Update key database
+  const db = await loadKeyDatabase();
+  db.keys.keybase[name] = {
+    path: keyPath,
+    type: 'keybase',
+    username: keyInfo.username,
+    fingerprint: keyInfo.keyId,
+    email: keyInfo.email,
+    added: new Date().toISOString(),
+    last_used: new Date().toISOString()
+  };
+  
+  await saveKeyDatabase(db);
+  return keyPath;
+}
+
 // Export functions
 export {
   ensureDirectories,
   loadKeyDatabase,
   generateKeyPair,
   addFriendKey,
+  addPgpKey,
+  addKeybaseKey,
   listKeys,
   getKey,
   removeKey,
   updateLastUsed,
   DEFAULT_KEY_DIR,
-  FRIENDS_KEY_DIR
+  FRIENDS_KEY_DIR,
+  PGP_KEY_DIR,
+  KEYBASE_KEY_DIR
 };
