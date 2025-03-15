@@ -1,6 +1,6 @@
 {
   "name": "dedpaste",
-  "version": "1.1.17",
+  "version": "1.1.18",
   "description": "CLI pastebin application using Cloudflare Workers and R2",
   "main": "dist/index.js",
   "type": "module",
