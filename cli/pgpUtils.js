@@ -183,21 +183,36 @@ async function importPgpKey(pgpKeyString, identifier = null) {
     
     // Pattern 3: Look inside the key block
     if (!userIdStr && pgpKeyString.includes('-----BEGIN PGP PUBLIC KEY BLOCK-----')) {
-      // Look for typical user ID pattern inside the key block
-      const userIdLines = pgpKeyString.split('\n').filter(line => 
-        line.includes('@') || 
-        line.match(/[A-Za-z]+\s+[A-Za-z]+/) // Looks like a name
-      );
+      console.log('Searching for user ID patterns in key block...');
       
-      if (userIdLines.length > 0) {
-        for (const line of userIdLines) {
-          // If line has an email, it's likely a user ID
-          if (line.includes('@')) {
-            userIdStr = line.trim();
-            console.log(`Found possible user ID line: ${userIdStr}`);
-            break;
-          }
+      // First try to find email addresses in the key block
+      const emailMatches = pgpKeyString.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g);
+      if (emailMatches && emailMatches.length > 0) {
+        directEmail = emailMatches[0]; // Use the first email found
+        console.log(`Found email in key block: ${directEmail}`);
+      }
+      
+      // Look for typical user ID pattern inside the key block
+      const userIdPatterns = [
+        /uid\s+[^\n]+<([^>]+)>/gi,                // uid format with email
+        /User ID[^\n"]+"([^"]+)"/gi,              // User ID format
+        /\b([A-Za-z]+\s+[A-Za-z]+)\s*<[^>]+>\b/g, // Name <email> format
+        /Comment:\s+([^\n<]+)\s*</g               // Comment: format
+      ];
+      
+      for (const pattern of userIdPatterns) {
+        const match = pattern.exec(pgpKeyString);
+        if (match && match[1]) {
+          userIdStr = match[0].trim();
+          console.log(`Found user ID with pattern: ${userIdStr}`);
+          break;
         }
+      }
+      
+      // If still no user ID but we found an email, construct a minimal one
+      if (!userIdStr && directEmail) {
+        userIdStr = `<${directEmail}>`;
+        console.log(`Constructed minimal user ID from email: ${userIdStr}`);
       }
     }
     
@@ -365,14 +380,31 @@ async function addPgpKeyFromServer(identifier, friendName = null) {
     
     console.log(`Key parsed with ID: ${keyInfo.keyId}`);
     
-    // Use provided name or derive from key
-    const name = friendName || keyInfo.name || keyInfo.email || keyInfo.keyId;
-    
-    if (name === 'unknown' && !friendName) {
-      // If we couldn't determine a name and none was provided,
-      // use a portion of the key ID as part of the name for easier reference
+    // Determine the best name to use for the key
+    let name;
+
+    // If a custom name was provided, use that
+    if (friendName) {
+      name = friendName;
+    }
+    // Otherwise, prefer email address if available
+    else if (keyInfo.email) {
+      name = keyInfo.email;
+    }
+    // If we have a human-readable name, use that
+    else if (keyInfo.name && keyInfo.name !== 'unknown') {
+      name = keyInfo.name;
+    }
+    // Last resort: use a shortened version of the key ID
+    else {
       const shortKeyId = keyInfo.keyId.substring(keyInfo.keyId.length - 8).toUpperCase();
-      return await addPgpKeyFromServer(identifier, `pgp-${shortKeyId}`);
+      name = `pgp-${shortKeyId}`;
+    }
+    
+    // For fingerprint imports, if we have an email, prefer that
+    if (identifier && identifier.match(/^[A-F0-9]{16,}$/i) && keyInfo.email) {
+      console.log(`Using email address ${keyInfo.email} instead of key ID for storage`);
+      name = keyInfo.email;
     }
     
     console.log(`Storing key with name: ${name}`);

@@ -278,19 +278,35 @@ dedpaste keys --interactive        # Interactive key management</code></pre>
   </div>
 
   <div class="card">
-    <h3>PGP & Keybase Integration</h3>
+    <h3>PGP Integration</h3>
     <pre><code>
-# Add a PGP key from keyservers
+# Get a key from keyservers by email
 dedpaste keys --pgp-key user@example.com
 
-# Add a PGP key with custom name
-dedpaste keys --pgp-key 0x1234ABCD --pgp-name alice
+# Get a key from keyservers by fingerprint
+dedpaste keys --pgp-key D6263DD69C2E9A472CC40FAC0D83AE44DE87A5F6
 
+# Import an existing PGP private key
+dedpaste keys --import-pgp-key path/to/key.pgp --pgp-passphrase "pass"
+
+# Send with native PGP encryption
+echo "secret" | dedpaste send --encrypt --for user@example.com --pgp
+
+# Decrypt a paste with PGP key
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --pgp-key-file key.pgp</code></pre>
+  </div>
+  
+  <div class="card">
+    <h3>Keybase Integration</h3>
+    <pre><code>
 # Add a Keybase user's key
 dedpaste keys --keybase username
 
 # Add a Keybase key with custom name
 dedpaste keys --keybase username --keybase-name bob
+
+# Send to a Keybase user
+echo "secret" | dedpaste send --encrypt --for keybase:username
 
 # Skip verification of Keybase proofs
 dedpaste keys --keybase username --no-verify</code></pre>
