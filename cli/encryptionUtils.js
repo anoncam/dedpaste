@@ -131,7 +131,7 @@ async function encryptContent(content, recipientName = null, usePgp = false) {
 }
 
 // Decrypt content
-async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPassphrase = null) {
+async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPassphrase = null, useGpgKeyring = true) {
   try {
     // Parse the encrypted data
     const encryptedData = JSON.parse(encryptedBuffer.toString());
@@ -145,11 +145,31 @@ async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPass
       return decryptV2Content(encryptedData);
     } else if (encryptedData.version === 3) {
       // PGP encrypted format
+      
+      // If using GPG keyring is enabled, try that first without requiring a private key path
+      if (useGpgKeyring) {
+        try {
+          console.log('Attempting to decrypt with system GPG keyring...');
+          // We don't need a private key file or passphrase for this method
+          const result = await decryptPgpMessage(encryptedBuffer, null, null, true);
+          
+          // If successful, return the result
+          if (result && result.content) {
+            return result;
+          }
+        } catch (gpgError) {
+          // If GPG keyring decryption fails, log the error and fall back to using private key
+          console.log(`GPG keyring decryption failed: ${gpgError.message}`);
+          console.log('Falling back to private key decryption if available...');
+        }
+      }
+      
+      // If we reach here, either GPG keyring wasn't used or it failed, so use private key
       if (!pgpPrivateKeyPath) {
         // Try to find the user's PGP private key in pgp directory
         const selfKey = await getKey('self', null, 'pgp');
         if (!selfKey) {
-          throw new Error('PGP encrypted message detected but no PGP private key found.');
+          throw new Error('PGP encrypted message detected but no PGP private key found. Try importing a key with --import-pgp-key.');
         }
         pgpPrivateKeyPath = selfKey.private;
       }
@@ -164,8 +184,13 @@ async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPass
       // Read the PGP private key
       const privateKeyContent = await fsPromises.readFile(pgpPrivateKeyPath, 'utf8');
       
-      // Decrypt with PGP
-      return await decryptPgpMessage(encryptedBuffer, privateKeyContent, pgpPassphrase);
+      // Check for test mode
+      if (pgpPassphrase === 'TEST_MODE') {
+        console.log('Using TEST_MODE for PGP decryption');
+      }
+      
+      // Decrypt with PGP using the provided private key
+      return await decryptPgpMessage(encryptedBuffer, privateKeyContent, pgpPassphrase, false);
     } else {
       throw new Error(`Unsupported encryption version: ${encryptedData.version}`);
     }
