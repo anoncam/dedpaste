@@ -10,6 +10,8 @@ A simple pastebin CLI application powered by Cloudflare Workers and R2 storage.
 - End-to-end encryption for secure content sharing
 - Support for RSA key pairs (PEM format)
 - Friend-to-friend encryption with key management
+- PGP keyserver integration for adding public keys
+- Keybase user integration with proof verification
 - Command-line interface for easy integration with scripts and tools
 - Dark mode web interface for better readability
 
@@ -133,6 +135,38 @@ dedpaste keys --remove alice
 
 # Interactive key management (menu-driven interface)
 dedpaste keys --interactive
+```
+
+### PGP Integration
+
+```bash
+# Add a PGP key from keyservers by email
+dedpaste keys --pgp-key user@example.com
+
+# Add a PGP key from keyservers by key ID
+dedpaste keys --pgp-key 0x1234ABCD
+
+# Add with custom name
+dedpaste keys --pgp-key user@example.com --pgp-name alice
+
+# List all keys including PGP keys
+dedpaste keys --list
+```
+
+### Keybase Integration
+
+```bash
+# Add a Keybase user's key
+dedpaste keys --keybase username
+
+# Add with custom name
+dedpaste keys --keybase username --keybase-name bob
+
+# Skip verification of proofs
+dedpaste keys --keybase username --no-verify
+
+# List all keys including Keybase keys
+dedpaste keys --list
 ```
 
 ### Sending Encrypted Pastes (`send` Command)
@@ -419,6 +453,8 @@ DedPaste supports end-to-end encryption, ensuring that your sensitive data remai
    - Standard SSH keys are not directly supported, but the CLI will offer to generate compatible keys
    - Keys are stored in `~/.dedpaste/keys/` by default
    - Friend's public keys are stored in `~/.dedpaste/friends/`
+   - PGP keys from keyservers are stored in `~/.dedpaste/pgp/`
+   - Keybase user keys are stored in `~/.dedpaste/keybase/`
    - Key database is maintained at `~/.dedpaste/keydb.json`
 
 3. **URL Format**:
@@ -431,6 +467,20 @@ DedPaste supports end-to-end encryption, ensuring that your sensitive data remai
    - This allows the CLI to automatically determine if you can decrypt a paste
    - Legacy (version 1) pastes are still supported for backward compatibility
 
+5. **PGP Integration**:
+   - Add PGP keys directly from public keyservers
+   - Fetch keys by email address or key ID
+   - Keys automatically include metadata from PGP user IDs
+   - Verifies key fingerprints for enhanced security
+   - Uses multiple fallback keyservers for reliability
+
+6. **Keybase Integration**:
+   - Add keys directly from Keybase users
+   - Optional verification of Keybase proofs
+   - Integration with Keybase's web of trust
+   - Automatic retrieval of metadata and fingerprints
+   - Supports custom naming for added keys
+
 ### Key Storage Structure
 
 ```
@@ -441,15 +491,22 @@ DedPaste supports end-to-end encryption, ensuring that your sensitive data remai
   ├── friends/
   │   ├── alice.pem    # Alice's public key
   │   └── bob.pem      # Bob's public key
-  └── keydb.json       # Key database with metadata
+  ├── pgp/
+  │   └── user@example.com.asc  # PGP public key from keyserver
+  ├── keybase/
+  │   └── username.asc          # PGP public key from Keybase
+  └── keydb.json               # Key database with metadata
 ```
 
 The key database (`keydb.json`) tracks:
 - Your personal key pair
 - All friend public keys
+- PGP keys fetched from keyservers
+- Keybase user keys
 - Key fingerprints for verification
 - Creation and last-used timestamps
 - Default friend settings
+- Email addresses and Keybase usernames
 
 ### Security Benefits
 
@@ -467,6 +524,111 @@ The key database (`keydb.json`) tracks:
 - If you receive a "No personal key found" error, run `dedpaste keys --gen-key` first
 - If you receive a "This paste was encrypted for X, not for you" error, it means you're trying to decrypt a paste intended for someone else
 - Use `--debug` flag with the `send` command to test encryption without uploading
+
+## PGP and Keybase Integration Guide
+
+DedPaste provides deep integration with PGP keyservers and Keybase for enhanced key management and identity verification.
+
+### Using PGP Keyserver Integration
+
+#### Fetching PGP Keys
+
+```bash
+# Add a PGP key by email address
+dedpaste keys --pgp-key user@example.com
+
+# Add a PGP key by key ID (with 0x prefix)
+dedpaste keys --pgp-key 0x1234ABCD
+
+# Add a PGP key with a custom name
+dedpaste keys --pgp-key user@example.com --pgp-name alice
+```
+
+The CLI will:
+1. Search multiple public keyservers (keys.openpgp.org, keyserver.ubuntu.com, pgp.mit.edu)
+2. Download the public key if found
+3. Extract metadata (name, email, key ID)
+4. Store the key with fingerprint information
+5. Add it to your key database
+
+#### Verifying PGP Keys
+
+```bash
+# List all keys including PGP keys
+dedpaste keys --list
+```
+
+The output will show the PGP key fingerprint, which you can use to verify the key's authenticity with the sender through a different channel.
+
+#### Encrypting to PGP Keys
+
+```bash
+# Encrypt a message for a PGP key recipient
+echo "Secret message" | dedpaste send --encrypt --for user@example.com
+```
+
+### Using Keybase Integration
+
+#### Adding Keybase User Keys
+
+```bash
+# Add a Keybase user's public key
+dedpaste keys --keybase username
+
+# Add with a custom name
+dedpaste keys --keybase username --keybase-name bob
+```
+
+The CLI will:
+1. Connect to Keybase's API
+2. Verify the user exists
+3. Check their identity proofs (by default)
+4. Fetch their public PGP key
+5. Extract metadata and store the key
+
+#### Bypassing Proof Verification
+
+If you want to skip proof verification (not recommended for sensitive data):
+
+```bash
+# Skip verification of Keybase proofs
+dedpaste keys --keybase username --no-verify
+```
+
+#### Using Keybase Keys
+
+```bash
+# List keys to see Keybase keys
+dedpaste keys --list
+
+# Encrypt to a Keybase user
+echo "Secret message" | dedpaste send --encrypt --for keybase:username
+
+# Or use the custom name if specified
+echo "Secret message" | dedpaste send --encrypt --for bob
+```
+
+### Advanced Usage
+
+#### Using Both PGP and Keybase in Interactive Mode
+
+```bash
+# Start interactive mode
+dedpaste send --interactive --encrypt
+```
+
+The interactive mode will show all available keys, including PGP and Keybase keys, allowing you to select the recipient from a menu.
+
+#### Removing Keys
+
+```bash
+# Remove any type of key (PGP, Keybase, or regular)
+dedpaste keys --remove keyname
+```
+
+#### Multiple Key Sources
+
+When encrypting to a recipient, DedPaste will search across all key sources (regular keys, PGP keys, and Keybase keys) to find the right recipient.
 
 ## Sending Encrypted Messages to a Friend
 
@@ -614,6 +776,26 @@ dedpaste get AbCdEfGh > downloaded_content.txt
 
 # Decrypt and process in one line
 dedpaste get https://paste.d3d.dev/e/AbCdEfGh | grep "secret" > filtered_secrets.txt
+```
+
+### PGP and Keybase Integration Usage
+
+```bash
+# Combine PGP key retrieval and encryption in one workflow
+dedpaste keys --pgp-key user@example.com && \
+echo "Secret data" | dedpaste send --encrypt --for user@example.com
+
+# Automate Keybase key retrieval and encryption
+dedpaste keys --keybase username && \
+echo "Secret data" | dedpaste send --encrypt --for keybase:username
+
+# Use PGP keys with one-time pastes
+dedpaste keys --pgp-key 0x1234ABCD && \
+echo "Self-destructing message" | dedpaste send --encrypt --for 0x1234ABCD --temp
+
+# Verify a Keybase user and then add their key
+curl -s https://keybase.io/username | grep "identity" && \
+dedpaste keys --keybase username
 ```
 
 ### Scripting Examples

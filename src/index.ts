@@ -194,6 +194,8 @@ export default {
         <li><span class="feature">End-to-end encryption</span> for secure sharing</li>
         <li><span class="feature">One-time pastes</span> that self-destruct after viewing</li>
         <li>Friend-to-friend encrypted sharing</li>
+        <li><span class="feature">PGP keyserver integration</span> for public keys</li>
+        <li><span class="feature">Keybase user integration</span> with proofs</li>
         <li>Command-line interface for easy scripting</li>
         <li>Support for RSA key pairs and SSH keys</li>
         <li>Binary file support with custom content types</li>
@@ -273,6 +275,25 @@ dedpaste keys --add-friend alice   # Add a friend's public key
 dedpaste keys --export             # Export your public key
 dedpaste keys --my-key             # Display your public key
 dedpaste keys --interactive        # Interactive key management</code></pre>
+  </div>
+
+  <div class="card">
+    <h3>PGP & Keybase Integration</h3>
+    <pre><code>
+# Add a PGP key from keyservers
+dedpaste keys --pgp-key user@example.com
+
+# Add a PGP key with custom name
+dedpaste keys --pgp-key 0x1234ABCD --pgp-name alice
+
+# Add a Keybase user's key
+dedpaste keys --keybase username
+
+# Add a Keybase key with custom name
+dedpaste keys --keybase username --keybase-name bob
+
+# Skip verification of Keybase proofs
+dedpaste keys --keybase username --no-verify</code></pre>
   </div>
   
   <div class="card">
