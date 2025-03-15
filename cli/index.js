@@ -491,6 +491,13 @@ Encryption:
           contentType = 'application/json';
         } catch (error) {
           console.error(`Encryption failed: ${error.message}`);
+          
+          // Provide helpful suggestions for common errors
+          if (error.message.includes('PGP key detected') && !options.pgp) {
+            console.log('\nSuggestion: This key appears to be a PGP key. Try adding the --pgp flag:');
+            console.log(`dedpaste send --encrypt --for ${recipientName} --pgp`);
+          }
+          
           process.exit(1);
         }
       } else {
@@ -588,6 +595,8 @@ program
   .option('--key-file <path>', 'Path to private key for decryption (if not using default key)')
   .option('--pgp-key-file <path>', 'Path to PGP private key for decryption')
   .option('--pgp-passphrase <passphrase>', 'Passphrase for PGP private key')
+  .option('--use-gpg-keyring', 'Try to decrypt PGP messages using the system GPG keyring', true)
+  .option('--no-gpg-keyring', 'Disable automatic GPG keyring decryption')
   .addHelpText('after', `
 Examples:
   $ dedpaste get https://paste.d3d.dev/AbCdEfGh        # Get a regular paste by URL
@@ -598,6 +607,8 @@ Examples:
 PGP Decryption:
   $ dedpaste get e/AbCdEfGh --pgp-key-file my.pgp      # Decrypt with PGP private key
   $ dedpaste get e/AbCdEfGh --pgp-key-file my.pgp --pgp-passphrase "secret"
+  $ dedpaste get e/AbCdEfGh                            # Automatically try GPG keyring for PGP content
+  $ dedpaste get e/AbCdEfGh --no-gpg-keyring           # Disable automatic GPG keyring usage
   
 URL Format:
   - Regular pastes: https://paste.d3d.dev/{id}
@@ -606,9 +617,16 @@ URL Format:
   
 Decryption:
   - Encrypted pastes are automatically decrypted if you have the correct private key
-  - PGP encrypted pastes will require a PGP private key and passphrase
+  - PGP encrypted pastes will first try the system GPG keyring (if available)
+  - If GPG keyring fails, a PGP private key and passphrase will be required
   - Metadata about sender and creation time is displayed when available
   - One-time pastes are deleted from the server after viewing
+  
+GPG Keyring Integration:
+  - By default, dedpaste will attempt to use your GPG keyring for PGP-encrypted pastes
+  - This allows decryption without explicitly providing a private key file
+  - Your system's gpg command is used to perform the decryption
+  - To disable this feature, use the --no-gpg-keyring flag
 `)
   .action(async (urlOrId, options) => {
     try {
@@ -669,10 +687,13 @@ Decryption:
         try {
           let result;
           
+          // Determine whether to use GPG keyring
+          const useGpgKeyring = options.useGpgKeyring !== false;
+          
           // Check if PGP key file is provided
           if (options.pgpKeyFile) {
-            // Use PGP decryption
-            console.log('Using PGP decryption');
+            // Use PGP decryption with specified key
+            console.log('Using PGP decryption with provided key file');
             
             // Check for passphrase
             if (!options.pgpPassphrase) {
@@ -680,11 +701,15 @@ Decryption:
               process.exit(1);
             }
             
-            // Decrypt with PGP
-            result = await decryptContent(contentBuffer, options.pgpKeyFile, options.pgpPassphrase);
+            // Decrypt with PGP, with GPG keyring as fallback if enabled
+            result = await decryptContent(contentBuffer, options.pgpKeyFile, options.pgpPassphrase, useGpgKeyring);
           } else {
-            // Use standard decryption
-            result = await decryptContent(contentBuffer);
+            // Use standard decryption, with GPG keyring for PGP content if enabled
+            if (useGpgKeyring) {
+              console.log('GPG keyring integration is enabled for PGP content');
+            }
+            
+            result = await decryptContent(contentBuffer, null, null, useGpgKeyring);
           }
           
           // Display metadata if available
