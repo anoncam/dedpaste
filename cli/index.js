@@ -14,7 +14,7 @@ import inquirer from 'inquirer';
 let clipboard;
 try {
   clipboard = await import('clipboardy');
-  console.log('DEBUG: Successfully loaded clipboardy module');
+  // Clipboard module loaded successfully
 } catch (error) {
   console.error(`Failed to load clipboardy: ${error.message}`);
   // Fallback implementation if clipboard fails to load
@@ -714,7 +714,7 @@ program
   .option('--pgp-armor', 'Output ASCII-armored PGP instead of binary format')
   .addHelpText('after', `
 Examples:
-  $ echo "Secret message" | dedpaste send --encrypt                # Encrypt for yourself
+  $ echo "Secret message" | dedpaste send --encrypt                # Encrypt for yourself (RSA/AES)
   $ echo "For Alice only" | dedpaste send --encrypt --for alice    # Encrypt for a friend
   $ dedpaste send --file secret.txt --encrypt --temp               # Encrypt a file as one-time paste
   $ dedpaste send --interactive --encrypt                          # Interactive encrypted message
@@ -722,10 +722,11 @@ Examples:
   $ dedpaste send --list-friends                                   # List available recipients
   
 PGP Options:
-  $ echo "Secret" | dedpaste send --encrypt --pgp                  # Use PGP encryption
-  $ dedpaste send --encrypt --for alice@example.com --pgp          # Encrypt for PGP key
-  $ dedpaste send --pgp-key-file friend.asc --encrypt --pgp        # Use specific PGP key file
-  $ dedpaste send --enhanced                                       # Use enhanced mode with GPG keyring support
+  $ dedpaste send --encrypt --for alice@example.com --pgp          # Encrypt for PGP key (REQUIRED: specify recipient)
+  $ dedpaste send --encrypt --for alice --pgp --pgp-key-file friend.asc  # Use specific PGP key file
+  $ dedpaste send --enhanced --encrypt --pgp                       # Use enhanced mode with GPG keyring support
+  
+IMPORTANT: PGP encryption always requires specifying a recipient with --for
   
 Encryption:
   - Standard encryption uses RSA for key exchange and AES-256-GCM for content
@@ -786,86 +787,135 @@ Encryption:
           contentType = 'text/plain';
         }
       } else {
-        // Determine if we're reading from a file or stdin
-        if (options.file) {
-          // Read from the specified file
-          if (!fs.existsSync(options.file)) {
-            console.error(`Error: File '${options.file}' does not exist`);
-            process.exit(1);
-          }
-          
-          content = fs.readFileSync(options.file);
-          // Try to detect the content type from the file extension
-          contentType = options.type || lookup(options.file) || 'text/plain';
-        } else {
-          // Read from stdin
-          const stdinBuffer = [];
-          for await (const chunk of process.stdin) {
-            stdinBuffer.push(chunk);
-          }
-          
-          if (stdinBuffer.length === 0) {
-            console.error('Error: No input provided. Pipe content to dedpaste or use --file option.');
-            process.exit(1);
-          }
-          
-          content = Buffer.concat(stdinBuffer);
-          contentType = options.type || 'text/plain';
+        // Fix for file option parsing - ensure it's correctly recognized
+      if (!options.file && (process.argv.includes('--file') || process.argv.includes('-f'))) {
+        // If Commander didn't parse it correctly, get the file path manually
+        const fileArgIndex = Math.max(
+          process.argv.indexOf('--file'), 
+          process.argv.indexOf('-f')
+        );
+        
+        if (fileArgIndex !== -1 && fileArgIndex < process.argv.length - 1) {
+          options.file = process.argv[fileArgIndex + 1];
         }
       }
       
-      // Check if encryption is requested (manually check for the flag)
-      const shouldEncrypt = process.argv.includes('--encrypt') || process.argv.includes('-e');
+      // Additional PGP flag check for send command
+      if (process.argv.includes('--pgp') && !options.pgp) {
+        options.pgp = true;
+      }
       
-      // Handle encryption if requested
-      if (shouldEncrypt) {
-        
-        // Generate new keys if requested
-        if (options.genKey) {
-          console.log('Generating new key pair');
-          const { publicKeyPath, privateKeyPath } = await generateKeyPair();
-          console.log(`
-  ✓ Generated new key pair:
-    - Private key: ${privateKeyPath}
-    - Public key: ${publicKeyPath}
-  `);
-        }
-        
-        // Encrypt the content
-        try {
-          // Check if PGP mode is requested
-          const usePgp = options.pgp;
-          
-          // If PGP key file is provided, read it and use it directly
-          if (options.pgpKeyFile) {
-            const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
-            content = await createPgpEncryptedMessage(content, pgpKeyContent, recipientName || 'recipient');
-          } else {
-            // Use the standard encryption flow with PGP option
-            content = await encryptContent(content, recipientName, usePgp);
-          }
-          
-          // Log PGP mode if used
-          if (usePgp || options.pgpKeyFile) {
-            console.log('Using PGP encryption');
-          }
-          
-          // Set content type to application/json for encrypted content
-          contentType = 'application/json';
-        } catch (error) {
-          console.error(`Encryption failed: ${error.message}`);
-          
-          // Provide helpful suggestions for common errors
-          if (error.message.includes('PGP key detected') && !options.pgp) {
-            console.log('\nSuggestion: This key appears to be a PGP key. Try adding the --pgp flag:');
-            console.log(`dedpaste send --encrypt --for ${recipientName} --pgp`);
-          }
-          
+      // Determine if we're reading from a file or stdin
+      if (options.file) {
+        // Read from the specified file
+        if (!fs.existsSync(options.file)) {
+          console.error(`Error: File '${options.file}' does not exist`);
           process.exit(1);
         }
+        
+        content = fs.readFileSync(options.file);
+        // Try to detect the content type from the file extension
+        contentType = options.type || lookup(options.file) || 'text/plain';
       } else {
-        console.log('No encryption requested');
+        // Read from stdin
+        const stdinBuffer = [];
+        for await (const chunk of process.stdin) {
+          stdinBuffer.push(chunk);
+        }
+        
+        if (stdinBuffer.length === 0) {
+          console.error('Error: No input provided. Pipe content to dedpaste or use --file option.');
+          process.exit(1);
+        }
+        
+        content = Buffer.concat(stdinBuffer);
+        contentType = options.type || 'text/plain';
       }
+      }
+      
+      // Parse command line arguments and options
+    
+    // Check if encryption is requested (manually check for the flag)
+    const shouldEncrypt = process.argv.includes('--encrypt') || process.argv.includes('-e');
+    
+    // Ensure file option is recognized correctly - check both parsed options and raw arguments
+    if (!options.file && (process.argv.includes('--file') || process.argv.includes('-f'))) {
+      // If Commander didn't parse it correctly, get the file path manually
+      const fileArgIndex = Math.max(
+        process.argv.indexOf('--file'), 
+        process.argv.indexOf('-f')
+      );
+      
+      if (fileArgIndex !== -1 && fileArgIndex < process.argv.length - 1) {
+        options.file = process.argv[fileArgIndex + 1];
+      }
+    }
+    
+    // Handle encryption if requested
+    if (shouldEncrypt) {
+        
+      // Generate new keys if requested
+      if (options.genKey) {
+        console.log('Generating new key pair');
+        const { publicKeyPath, privateKeyPath } = await generateKeyPair();
+        console.log(`
+✓ Generated new key pair:
+  - Private key: ${privateKeyPath}
+  - Public key: ${publicKeyPath}
+`);
+      }
+      
+      // Encrypt the content
+      try {
+        // Check if PGP mode is requested
+        const usePgp = options.pgp;
+        
+        // Validate encryption parameters
+        
+        // For PGP encryption, always require a recipient
+        if (usePgp && !recipientName) {
+          console.error(`Error: PGP encryption requires specifying a recipient with --for`);
+          console.error(`Please use: dedpaste send --encrypt --pgp --for <recipient_name>`);
+          process.exit(1);
+        }
+        
+        // If PGP key file is provided, read it and use it directly
+        if (options.pgpKeyFile) {
+          if (!recipientName) {
+            console.error(`Error: When using --pgp-key-file, you must specify a recipient with --for`);
+            process.exit(1);
+          }
+          const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
+          content = await createPgpEncryptedMessage(content, pgpKeyContent, recipientName);
+        } else {
+          // Use the standard encryption flow with PGP option
+          content = await encryptContent(content, recipientName, usePgp);
+        }
+        
+        // Log PGP mode if used
+        if (usePgp || options.pgpKeyFile) {
+          console.log('Using PGP encryption');
+        }
+        
+        // Set content type to application/json for encrypted content
+        contentType = 'application/json';
+      } catch (error) {
+        console.error(`Encryption failed: ${error.message}`);
+        
+        // Provide helpful suggestions for common errors
+        if (error.message.includes('PGP key detected') && !options.pgp) {
+          console.log('\nSuggestion: This key appears to be a PGP key. Try adding the --pgp flag:');
+          console.log(`dedpaste send --encrypt --for ${recipientName} --pgp`);
+        } else if (error.message.includes('requires specifying a recipient')) {
+          console.log('\nFor PGP encryption, always specify a recipient:');
+          console.log(`dedpaste send --encrypt --pgp --for <recipient_name>`);
+        }
+        
+        process.exit(1);
+      }
+    } else {
+      console.log('No encryption requested');
+    }
       
       // Determine the endpoint based on whether it's a temporary paste and encrypted
       let endpoint;
@@ -907,13 +957,11 @@ Encryption:
         if (options.copy) {
           try {
             const cleanUrl = url.trim();
-            console.log(`DEBUG: Send command - Attempting to copy URL to clipboard: "${cleanUrl}"`);
             if (clipboard.default) {
               clipboard.default.writeSync(cleanUrl);
             } else {
               clipboard.writeSync(cleanUrl);
             }
-            console.log(`DEBUG: Send command - URL copied successfully`);
           } catch (error) {
             console.error(`Unable to copy to clipboard: ${error.message}`);
           }
@@ -1314,7 +1362,7 @@ Default Command Examples:
   $ echo "Hello, world!" | dedpaste                    # Create a basic paste
   $ dedpaste --file document.txt                       # Upload a file
   $ echo "Secret data" | dedpaste --encrypt            # Create an encrypted paste
-  $ echo "Secret data" | dedpaste --encrypt --pgp      # Create a PGP-encrypted paste
+  $ echo "Secret data" | dedpaste --encrypt --for alice --pgp # Create a PGP-encrypted paste for a recipient
   $ dedpaste --file image.jpg --type image/jpeg        # Upload with specific content type
   $ echo "One-time message" | dedpaste --temp          # Create a one-time paste
   $ dedpaste --interactive --encrypt                   # Interactive encrypted message creation
@@ -1322,8 +1370,10 @@ Default Command Examples:
   
 For more advanced options, use the subcommands:
   $ dedpaste keys --help                               # Key management options
-  $ dedpaste send --help                               # Advanced sending options
+  $ dedpaste send --help                               # Advanced sending options (Recommended for PGP)
   $ dedpaste get --help                                # Retrieval options
+
+NOTE: For PGP encryption, always use the 'send' command and specify a recipient with --for
 `);
 
 // Add a default command that handles unencrypted pastes
@@ -1335,8 +1385,7 @@ program
       return;
     }
 
-    console.log("DEBUG: Command line options:", options);
-    console.log("DEBUG: Arguments:", process.argv);
+    // Process command line options and arguments
 
     let content;
     let contentType;
@@ -1391,8 +1440,39 @@ program
         }
       }
       
+      // Process command line arguments
+      
       // Check if encryption is requested (manually check for the flag)
       const shouldEncrypt = process.argv.includes('--encrypt') || process.argv.includes('-e');
+      
+      // Fix for file option parsing - ensure it's correctly recognized
+      if (!options.file && (process.argv.includes('--file') || process.argv.includes('-f'))) {
+        // If Commander didn't parse it correctly, get the file path manually
+        const fileArgIndex = Math.max(
+          process.argv.indexOf('--file'), 
+          process.argv.indexOf('-f')
+        );
+        
+        if (fileArgIndex !== -1 && fileArgIndex < process.argv.length - 1) {
+          options.file = process.argv[fileArgIndex + 1];
+          
+          // Since we're handling this manually, recheck file existence
+          if (!fs.existsSync(options.file)) {
+            console.error(`Error: File '${options.file}' does not exist`);
+            process.exit(1);
+          }
+          
+          // Re-read content from file since we updated the option
+          content = fs.readFileSync(options.file);
+          contentType = options.type || lookup(options.file) || 'text/plain';
+        }
+      }
+      
+      // Additional PGP flag check
+      const usePgp = options.pgp || process.argv.includes('--pgp');
+      if (usePgp && !options.pgp) {
+        options.pgp = true;
+      }
       
       // Handle encryption if requested
       if (shouldEncrypt) {
@@ -1400,16 +1480,28 @@ program
         // rather than trying to redirect to it, since we would lose stdin
         
         try {
-          // Check if PGP mode is requested
-          const usePgp = options.pgp;
+          // Validate encryption parameters
+          
+          // If PGP is selected, validate required parameters
+          if (usePgp) {
+            if (!options.for) {
+              console.error(`Error: PGP encryption requires specifying a recipient with --for.`);
+              console.error(`Please use: dedpaste send --encrypt --pgp --for <recipient_name>`);
+              process.exit(1);
+            }
+          }
           
           // If PGP key file is provided, read it and use it directly
           if (options.pgpKeyFile) {
+            if (!options.for) {
+              console.error(`Error: When using --pgp-key-file, you must specify a recipient with --for`);
+              process.exit(1);
+            }
             const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
-            content = await createPgpEncryptedMessage(content, pgpKeyContent, 'self');
+            content = await createPgpEncryptedMessage(content, pgpKeyContent, options.for);
           } else {
             // Use the standard encryption flow with PGP option
-            content = await encryptContent(content, null, usePgp);
+            content = await encryptContent(content, options.for, usePgp);
           }
           
           // Log PGP mode if used
@@ -1421,6 +1513,7 @@ program
           contentType = 'application/json';
         } catch (error) {
           console.error(`Encryption failed: ${error.message}`);
+          console.error(`\nFor PGP encryption, use: dedpaste send --encrypt --pgp --for <recipient_name>`);
           process.exit(1);
         }
         
@@ -1451,13 +1544,11 @@ program
           if (options.copy) {
             try {
               const cleanUrl = url.trim();
-              console.log(`DEBUG: Encrypted command - Attempting to copy URL to clipboard: "${cleanUrl}"`);
               if (clipboard.default) {
                 clipboard.default.writeSync(cleanUrl);
               } else {
                 clipboard.writeSync(cleanUrl);
               }
-              console.log(`DEBUG: Encrypted command - URL copied successfully`);
             } catch (error) {
               console.error(`Unable to copy to clipboard: ${error.message}`);
             }
@@ -1509,13 +1600,11 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
         if (options.copy) {
           try {
             const cleanUrl = url.trim();
-            console.log(`DEBUG: Primary command - Attempting to copy URL to clipboard: "${cleanUrl}"`);
             if (clipboard.default) {
               clipboard.default.writeSync(cleanUrl);
             } else {
               clipboard.writeSync(cleanUrl);
             }
-            console.log(`DEBUG: Primary command - URL copied successfully`);
           } catch (error) {
             console.error(`Unable to copy to clipboard: ${error.message}`);
           }

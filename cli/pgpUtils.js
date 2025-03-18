@@ -1099,31 +1099,173 @@ async function decryptPgpMessage(encryptedBuffer, pgpPrivateKeyString, passphras
 /**
  * Validate a PGP key string to ensure it's properly formatted
  * @param {string} pgpKeyString - PGP key to validate
- * @returns {Promise<boolean>} - True if valid
+ * @param {boolean} [isPrivate=false] - Whether this is a private key
+ * @returns {Promise<Object>} - Validation result with details
  */
-async function validatePgpKey(pgpKeyString) {
+async function validatePgpKey(pgpKeyString, isPrivate = false) {
+  const result = {
+    valid: false,
+    errors: [],
+    warnings: [],
+    keyInfo: null
+  };
+  
   try {
+    // Basic input validation
     if (!pgpKeyString || typeof pgpKeyString !== 'string') {
-      console.error('Invalid key: Not a string or empty');
-      return false;
+      result.errors.push('Invalid key: Not a string or empty');
+      return result;
     }
     
-    if (!pgpKeyString.includes('-----BEGIN PGP PUBLIC KEY BLOCK-----')) {
-      console.error('Invalid key: Missing PGP public key header');
-      return false;
+    // Check for key type and proper format
+    const keyType = isPrivate ? 'PRIVATE' : 'PUBLIC';
+    const expectedHeader = `-----BEGIN PGP ${keyType} KEY BLOCK-----`;
+    const expectedFooter = `-----END PGP ${keyType} KEY BLOCK-----`;
+    
+    if (!pgpKeyString.includes(expectedHeader)) {
+      result.errors.push(`Invalid key: Missing PGP ${keyType.toLowerCase()} key header`);
+      
+      // Check if it's the wrong key type
+      const oppositeHeader = isPrivate ? 
+        '-----BEGIN PGP PUBLIC KEY BLOCK-----' : 
+        '-----BEGIN PGP PRIVATE KEY BLOCK-----';
+        
+      if (pgpKeyString.includes(oppositeHeader)) {
+        result.errors.push(`Wrong key type: Expected ${keyType.toLowerCase()} key but found ${isPrivate ? 'public' : 'private'} key`);
+      }
+      
+      return result;
     }
     
-    if (!pgpKeyString.includes('-----END PGP PUBLIC KEY BLOCK-----')) {
-      console.error('Invalid key: Missing PGP public key footer');
-      return false;
+    if (!pgpKeyString.includes(expectedFooter)) {
+      result.errors.push(`Invalid key: Missing PGP ${keyType.toLowerCase()} key footer`);
+      return result;
     }
     
-    // Try to read the key
-    await openpgp.readKey({ armoredKey: pgpKeyString });
-    return true;
+    // Check for corrupted or modified armor
+    const armorRegex = /-----BEGIN PGP .*?-----\r?\n(.*?\r?\n)*?-----END PGP .*?-----/;
+    if (!armorRegex.test(pgpKeyString)) {
+      result.errors.push('Invalid key: Malformed PGP armor format');
+      return result;
+    }
+    
+    // Check for common encoding issues
+    if (pgpKeyString.includes('\ufffd') || pgpKeyString.includes('�')) {
+      result.warnings.push('Warning: Key contains unicode replacement characters, possible encoding issues');
+    }
+    
+    // Try to read the key with OpenPGP.js
+    let pgpKey;
+    if (isPrivate) {
+      pgpKey = await openpgp.readPrivateKey({ armoredKey: pgpKeyString });
+    } else {
+      pgpKey = await openpgp.readKey({ armoredKey: pgpKeyString });
+    }
+    
+    // Extract key information for more detailed validation
+    let keyId = '';
+    let userid = '';
+    let creationDate = null;
+    let expirationDate = null;
+    let keyStrength = null;
+    let keyAlgorithm = null;
+    
+    try {
+      // Get basic key info
+      if (pgpKey.getKeyId) {
+        keyId = pgpKey.getKeyId().toHex().toUpperCase();
+      }
+      
+      // Get user information
+      if (pgpKey.users && pgpKey.users.length > 0) {
+        const user = pgpKey.users[0];
+        if (user.userId) {
+          userid = user.userId.name;
+          if (user.userId.email) {
+            userid += ` <${user.userId.email}>`;
+          }
+        }
+      }
+      
+      // Get creation date
+      if (pgpKey.getCreationTime) {
+        creationDate = pgpKey.getCreationTime();
+      }
+      
+      // Get expiration date
+      if (pgpKey.getExpirationTime) {
+        expirationDate = pgpKey.getExpirationTime();
+        
+        // Check if key is expired
+        if (expirationDate && expirationDate < new Date()) {
+          result.warnings.push(`Warning: This key expired on ${expirationDate.toLocaleDateString()}`);
+        }
+      }
+      
+      // Check key algorithm and strength
+      if (pgpKey.keyPacket) {
+        switch (pgpKey.keyPacket.algorithm) {
+          case 1:
+            keyAlgorithm = 'RSA';
+            keyStrength = pgpKey.keyPacket.getKeySize ? pgpKey.keyPacket.getKeySize() : 'unknown';
+            break;
+          case 2:
+            keyAlgorithm = 'RSA';
+            keyStrength = pgpKey.keyPacket.getKeySize ? pgpKey.keyPacket.getKeySize() : 'unknown';
+            break;
+          case 3:
+            keyAlgorithm = 'DSA';
+            break;
+          case 16:
+            keyAlgorithm = 'Elgamal';
+            break;
+          case 17:
+            keyAlgorithm = 'ECDSA';
+            break;
+          case 18:
+            keyAlgorithm = 'ECDH';
+            break;
+          case 19:
+            keyAlgorithm = 'EDDSA';
+            break;
+          default:
+            keyAlgorithm = `Unknown (${pgpKey.keyPacket.algorithm})`;
+        }
+        
+        // Check key strength
+        if (keyAlgorithm === 'RSA' && keyStrength && keyStrength < 2048) {
+          result.warnings.push(`Warning: RSA key strength (${keyStrength} bits) is below recommended 2048 bits`);
+        }
+      }
+      
+      // Store key info
+      result.keyInfo = {
+        keyId,
+        userid,
+        creationDate,
+        expirationDate,
+        keyAlgorithm,
+        keyStrength
+      };
+    } catch (infoError) {
+      result.warnings.push(`Warning: Could not extract complete key information: ${infoError.message}`);
+    }
+    
+    // If we got this far without errors, the key is valid
+    result.valid = true;
+    
+    return result;
   } catch (error) {
-    console.error(`PGP key validation error: ${error.message}`);
-    return false;
+    result.errors.push(`PGP key validation error: ${error.message}`);
+    
+    // Provide more specific error details
+    if (error.message.includes('Misformed armored text')) {
+      result.errors.push('Key appears to be corrupted or incorrectly copied');
+    } else if (error.message.includes('No key packet found')) {
+      result.errors.push('Key data is missing or incomplete');
+    }
+    
+    return result;
   }
 }
 

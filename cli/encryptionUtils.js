@@ -67,6 +67,10 @@ async function encryptContent(content, recipientName = null, usePgp = false) {
     
     // If usePgp is true or the key is a PGP key, use PGP encryption
     if (usePgp || keyType === 'pgp') {
+      // PGP encryption requires a recipient
+      if (!recipientName) {
+        throw new Error('PGP encryption requires specifying a recipient with --for. Self-encryption is not supported for PGP.');
+      }
       return await createPgpEncryptedMessage(content, publicKey, recipientName);
     }
     
