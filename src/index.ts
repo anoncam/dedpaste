@@ -73,275 +73,12 @@ export default {
         const id = encryptedMatch[1];
         return await handleGet(id, env, ctx, true);
       }
+
+      // styles.css will now be served automatically by the [site] configuration
       
       // Serve the HTML homepage
       if (path === '/') {
-        return new Response(`<!DOCTYPE html>
-<html>
-<head>
-  <title>DedPaste - Secure Pastebin Service</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="DedPaste - A secure pastebin service with end-to-end encryption and CLI client">
-  <style>
-    :root {
-      --bg-color: #121212;
-      --text-color: #e0e0e0;
-      --heading-color: #ffffff;
-      --accent-color: #bb86fc;
-      --code-bg: #1e1e1e;
-      --border-color: #333333;
-      --highlight: #03dac6;
-      --card-bg: #1e1e1e;
-    }
-    
-    body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-      background-color: var(--bg-color);
-      color: var(--text-color);
-      line-height: 1.6;
-    }
-    
-    h1, h2, h3 {
-      color: var(--heading-color);
-      margin-top: 1.5em;
-    }
-    
-    h1 {
-      font-size: 2.5rem;
-      margin-bottom: 0.5em;
-      border-bottom: 2px solid var(--accent-color);
-      padding-bottom: 0.2em;
-    }
-    
-    h2 {
-      font-size: 1.8rem;
-      margin-top: 1.8em;
-    }
-    
-    a {
-      color: var(--accent-color);
-      text-decoration: none;
-    }
-    
-    a:hover {
-      text-decoration: underline;
-    }
-    
-    pre {
-      background: var(--code-bg);
-      padding: 15px;
-      border-radius: 8px;
-      overflow: auto;
-      border: 1px solid var(--border-color);
-      margin: 1em 0;
-    }
-    
-    code {
-      font-family: 'Fira Code', 'Cascadia Code', 'Source Code Pro', Consolas, monospace;
-      color: var(--text-color);
-    }
-    
-    .feature {
-      color: var(--highlight);
-      font-weight: bold;
-    }
-    
-    .card {
-      background: var(--card-bg);
-      border-radius: 8px;
-      padding: 1.5em;
-      margin: 1.5em 0;
-      border: 1px solid var(--border-color);
-    }
-    
-    .card h3 {
-      margin-top: 0;
-      color: var(--accent-color);
-    }
-    
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 20px;
-      margin: 2em 0;
-    }
-    
-    @media (max-width: 600px) {
-      body {
-        padding: 15px;
-      }
-      h1 {
-        font-size: 2rem;
-      }
-      .grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
-</head>
-<body>
-  <h1>DedPaste</h1>
-  <p>A secure pastebin service with end-to-end encryption and command-line interface.</p>
-  
-  <div class="grid">
-    <div class="card">
-      <h3>Key Features</h3>
-      <ul>
-        <li>Simple text and file sharing</li>
-        <li><span class="feature">End-to-end encryption</span> for secure sharing</li>
-        <li><span class="feature">One-time pastes</span> that self-destruct after viewing</li>
-        <li>Friend-to-friend encrypted sharing</li>
-        <li><span class="feature">PGP keyserver integration</span> for public keys</li>
-        <li><span class="feature">Keybase user integration</span> with proofs</li>
-        <li>Command-line interface for easy scripting</li>
-        <li>Support for RSA key pairs and SSH keys</li>
-        <li>Binary file support with custom content types</li>
-      </ul>
-    </div>
-    
-    <div class="card">
-      <h3>Getting Started</h3>
-      <p>Install the CLI client:</p>
-      <pre><code>npm install -g dedpaste</code></pre>
-      <p>Create your first paste:</p>
-      <pre><code>echo "Hello World!" | dedpaste</code></pre>
-      <p>Create an encrypted paste:</p>
-      <pre><code>echo "Secret data" | dedpaste --encrypt</code></pre>
-    </div>
-  </div>
-  
-  <h2>API Usage</h2>
-  <pre><code>
-# Post content
-curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${url.origin}/upload
-
-# Post one-time content (deleted after first view)
-curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${url.origin}/temp
-
-# Post encrypted content (client-side encryption)
-curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${url.origin}/e/upload
-
-# Post encrypted one-time content
-curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${url.origin}/e/temp
-
-# Get content
-curl ${url.origin}/{paste-id}
-
-# Get encrypted content (requires client-side decryption)
-curl ${url.origin}/e/{paste-id}</code></pre>
-  
-  <h2>CLI Commands</h2>
-  <div class="card">
-    <h3>Basic Operations</h3>
-    <pre><code>
-# Post content from stdin
-echo "content" | dedpaste
-
-# Post file
-dedpaste < file.txt
-
-# Post with a specific file
-dedpaste --file path/to/file.txt
-
-# Post one-time content (deleted after first view)
-echo "secret" | dedpaste --temp
-
-# Post with custom content type
-dedpaste --type application/json < data.json
-
-# Output only the URL (useful for scripts)
-echo "content" | dedpaste --output</code></pre>
-  </div>
-  
-  <div class="card">
-    <h3>Encryption Features</h3>
-    <pre><code>
-# Post encrypted content
-echo "secret" | dedpaste --encrypt
-
-# Post encrypted content with specific key
-echo "secret" | dedpaste --encrypt --key-file ~/.ssh/id_rsa.pub
-
-# Generate new key pair and encrypt
-echo "secret" | dedpaste --encrypt --gen-key
-
-# Key management
-dedpaste keys --list               # List all keys
-dedpaste keys --gen-key            # Generate a new key pair
-dedpaste keys --add-friend alice   # Add a friend's public key
-dedpaste keys --export             # Export your public key
-dedpaste keys --my-key             # Display your public key
-dedpaste keys --interactive        # Interactive key management</code></pre>
-  </div>
-
-  <div class="card">
-    <h3>PGP Integration</h3>
-    <pre><code>
-# Get a key from keyservers by email
-dedpaste keys --pgp-key user@example.com
-
-# Get a key from keyservers by fingerprint
-dedpaste keys --pgp-key D6263DD69C2E9A472CC40FAC0D83AE44DE87A5F6
-
-# Import an existing PGP private key
-dedpaste keys --import-pgp-key path/to/key.pgp --pgp-passphrase "pass"
-
-# Send with native PGP encryption
-echo "secret" | dedpaste send --encrypt --for user@example.com --pgp
-
-# Decrypt a paste with PGP key
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh --pgp-key-file key.pgp</code></pre>
-  </div>
-  
-  <div class="card">
-    <h3>Keybase Integration</h3>
-    <pre><code>
-# Add a Keybase user's key
-dedpaste keys --keybase username
-
-# Add a Keybase key with custom name
-dedpaste keys --keybase username --keybase-name bob
-
-# Send to a Keybase user
-echo "secret" | dedpaste send --encrypt --for keybase:username
-
-# Skip verification of Keybase proofs
-dedpaste keys --keybase username --no-verify</code></pre>
-  </div>
-  
-  <div class="card">
-    <h3>Friend-to-Friend Sharing</h3>
-    <pre><code>
-# List available friends
-dedpaste send --list-friends
-
-# Send encrypted message to a friend
-echo "Secret message" | dedpaste send --encrypt --for alice
-
-# Send encrypted one-time message
-echo "One-time secret" | dedpaste send --encrypt --for alice --temp
-
-# Get and decrypt a paste
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh</code></pre>
-  </div>
-  
-  <h2>Security</h2>
-  <p>DedPaste uses hybrid encryption (RSA + AES-256-GCM) with all encryption/decryption happening client-side. 
-  The server never sees your unencrypted content or encryption keys, ensuring true end-to-end encryption.</p>
-  
-  <div class="card">
-    <h3>Additional Resources</h3>
-    <ul>
-      <li>GitHub Repository: <a href="https://github.com/anoncam/dedpaste" target="_blank">github.com/anoncam/dedpaste</a></li>
-      <li>Shell Auto-Completion: <code>dedpaste completion --bash</code> or <code>dedpaste completion --zsh</code></li>
-      <li>Self-Deployment Guide: Available in the README</li>
-    </ul>
-  </div>
-</body>
-</html>`, {
+        return new Response(generateHomepage(url.origin), {
           headers: {
             'Content-Type': 'text/html',
             'Access-Control-Allow-Origin': '*',
@@ -355,6 +92,298 @@ dedpaste get https://paste.d3d.dev/e/AbCdEfGh</code></pre>
     return new Response('Method not allowed', { status: 405 });
   },
 };
+
+function generateHomepage(origin: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>DedPaste - Secure Pastebin Service</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="DedPaste - A secure pastebin service with end-to-end encryption, PGP integration, and CLI client">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap">
+</head>
+<body class="bg-dark-900 text-gray-100 min-h-screen">
+  <header class="border-b border-dark-700 py-6">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="flex items-center justify-between">
+        <h1 class="text-3xl md:text-4xl font-bold text-white">
+          <span class="text-primary-400">Ded</span>Paste
+        </h1>
+        <div class="flex items-center space-x-4">
+          <a href="https://github.com/anoncam/dedpaste" target="_blank" class="btn-secondary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-5 h-5 mr-2">
+              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+            </svg>
+            GitHub
+          </a>
+          <a href="#install" class="btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-5 h-5 mr-2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Install
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mx-auto px-4 md:px-6 py-8">
+    <section class="mb-16">
+      <div class="max-w-3xl mx-auto text-center mb-12">
+        <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Secure Pastebin with Advanced Encryption</h2>
+        <p class="text-xl text-gray-300">A powerful CLI tool for sharing text and files with end-to-end encryption, PGP support, and one-time pastes.</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="card">
+          <div class="mb-4">
+            <span class="feature-tag">End-to-End Encryption</span>
+          </div>
+          <h3 class="text-xl font-semibold text-white mb-2">Keep Your Content Private</h3>
+          <p class="text-gray-300">All encryption happens client-side. The server never sees your unencrypted content or keys.</p>
+        </div>
+        
+        <div class="card">
+          <div class="mb-4">
+            <span class="feature-tag">PGP Integration</span>
+          </div>
+          <h3 class="text-xl font-semibold text-white mb-2">Use Your Existing Keys</h3>
+          <p class="text-gray-300">Leverage PGP keys from keyservers, GPG keyring, or Keybase for trusted communications.</p>
+        </div>
+        
+        <div class="card">
+          <div class="mb-4">
+            <span class="feature-tag">One-Time Pastes</span>
+          </div>
+          <h3 class="text-xl font-semibold text-white mb-2">Self-Destructing Content</h3>
+          <p class="text-gray-300">Create pastes that automatically delete after being viewed once.</p>
+        </div>
+        
+        <div class="card">
+          <div class="mb-4">
+            <span class="feature-tag">Binary Support</span>
+          </div>
+          <h3 class="text-xl font-semibold text-white mb-2">Beyond Just Text</h3>
+          <p class="text-gray-300">Upload and share binary files with proper content type detection.</p>
+        </div>
+        
+        <div class="card">
+          <div class="mb-4">
+            <span class="feature-tag">Friend-to-Friend</span>
+          </div>
+          <h3 class="text-xl font-semibold text-white mb-2">Secure Sharing</h3>
+          <p class="text-gray-300">Easily manage keys for your friends and encrypt content specifically for them.</p>
+        </div>
+        
+        <div class="card">
+          <div class="mb-4">
+            <span class="feature-tag">CLI Power</span>
+          </div>
+          <h3 class="text-xl font-semibold text-white mb-2">Advanced Scripting</h3>
+          <p class="text-gray-300">Command-line interface for easy integration with your existing scripts and workflows.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install" class="mb-16">
+      <div class="max-w-3xl mx-auto">
+        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Installation</h2>
+        
+        <div class="mb-8">
+          <h3 class="text-xl font-semibold text-white mb-4">Using npm (recommended)</h3>
+          <pre><code>npm install -g dedpaste</code></pre>
+        </div>
+        
+        <div class="mb-8">
+          <h3 class="text-xl font-semibold text-white mb-4">From source</h3>
+          <pre><code>git clone https://github.com/anoncam/dedpaste.git
+cd dedpaste
+npm install
+npm link</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-16">
+      <div class="max-w-4xl mx-auto">
+        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Quick Start Examples</h2>
+        
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">Basic Usage</h3>
+            <pre><code># Create a paste from stdin
+echo "Hello, World!" | dedpaste
+
+# Create a paste from a file
+dedpaste < file.txt
+
+# Create a one-time paste
+echo "Secret content" | dedpaste --temp
+
+# Specify file explicitly
+dedpaste --file path/to/file.txt</code></pre>
+          </div>
+          
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">Encryption</h3>
+            <pre><code># Generate your key pair first
+dedpaste keys --gen-key
+
+# Create encrypted paste
+echo "Secret data" | dedpaste --encrypt
+
+# Encrypt for a friend
+echo "For Alice" | dedpaste send --encrypt --for alice
+
+# Use PGP encryption
+echo "PGP Secret" | dedpaste send --encrypt --for user@example.com --pgp</code></pre>
+          </div>
+        </div>
+        
+        <div class="grid md:grid-cols-2 gap-6">
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">Key Management</h3>
+            <pre><code># List all your keys
+dedpaste keys --list
+
+# Add a friend's public key
+dedpaste keys --add-friend alice --key-file alice.pem
+
+# Add a PGP key from keyservers
+dedpaste keys --pgp-key user@example.com
+
+# Add a Keybase user's key
+dedpaste keys --keybase username</code></pre>
+          </div>
+          
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">Retrieving Pastes</h3>
+            <pre><code># Get and display a paste
+dedpaste get https://paste.d3d.dev/AbCdEfGh
+
+# Get and decrypt an encrypted paste
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh
+
+# Use a specific key file
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --key-file private.pem</code></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-16">
+      <div class="max-w-4xl mx-auto">
+        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Troubleshooting</h2>
+        
+        <div class="space-y-6">
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">Common PGP Errors</h3>
+            <div class="space-y-4">
+              <div>
+                <p class="text-danger font-semibold mb-1">Error: PGP encryption requires a recipient</p>
+                <p class="text-gray-300">Always specify a recipient when using PGP encryption:</p>
+                <pre><code>echo "secret" | dedpaste send --encrypt --for user@example.com --pgp</code></pre>
+              </div>
+              
+              <div>
+                <p class="text-danger font-semibold mb-1">Error: Failed to find PGP key for recipient</p>
+                <p class="text-gray-300">Make sure you've added the recipient's PGP key first:</p>
+                <pre><code>dedpaste keys --pgp-key user@example.com</code></pre>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">Key Management Issues</h3>
+            <div class="space-y-4">
+              <div>
+                <p class="text-danger font-semibold mb-1">Error: No personal key found</p>
+                <p class="text-gray-300">Generate your key pair first:</p>
+                <pre><code>dedpaste keys --gen-key</code></pre>
+              </div>
+              
+              <div>
+                <p class="text-danger font-semibold mb-1">Error: Friend not found in key database</p>
+                <p class="text-gray-300">Add the friend's key before encrypting for them:</p>
+                <pre><code>dedpaste keys --add-friend name --key-file path/to/key.pem</code></pre>
+              </div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <h3 class="text-xl font-semibold text-white mb-4">CLI Parameter Issues</h3>
+            <div class="space-y-4">
+              <div>
+                <p class="text-danger font-semibold mb-1">Error: File not found with --file flag</p>
+                <p class="text-gray-300">Double-check the file path and use quotes for paths with spaces:</p>
+                <pre><code>dedpaste --file "path/to/my file.txt"</code></pre>
+              </div>
+              
+              <div>
+                <p class="text-danger font-semibold mb-1">Error: --for is required when using --pgp</p>
+                <p class="text-gray-300">PGP encryption always requires specifying a recipient:</p>
+                <pre><code>dedpaste send --encrypt --for recipient@example.com --pgp</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-16">
+      <div class="max-w-3xl mx-auto">
+        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">API Usage</h2>
+        
+        <pre><code># Post content
+curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${origin}/upload
+
+# Post one-time content
+curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${origin}/temp
+
+# Post encrypted content (client-side encryption)
+curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${origin}/e/upload
+
+# Post encrypted one-time content
+curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${origin}/e/temp
+
+# Get content
+curl ${origin}/{paste-id}
+
+# Get encrypted content (requires client-side decryption)
+curl ${origin}/e/{paste-id}</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="bg-dark-800 border-t border-dark-700 py-8">
+    <div class="container mx-auto px-4 md:px-6">
+      <div class="grid md:grid-cols-2 gap-8">
+        <div>
+          <h3 class="text-xl font-semibold text-white mb-4">DedPaste</h3>
+          <p class="text-gray-300 mb-4">A secure pastebin service with end-to-end encryption and advanced PGP integration.</p>
+          <p class="text-gray-400">&copy; ${new Date().getFullYear()} - ISC License</p>
+        </div>
+        
+        <div>
+          <h3 class="text-xl font-semibold text-white mb-4">Resources</h3>
+          <ul class="space-y-2">
+            <li><a href="https://github.com/anoncam/dedpaste" class="text-primary-400 hover:text-primary-300">GitHub Repository</a></li>
+            <li><a href="https://github.com/anoncam/dedpaste/issues" class="text-primary-400 hover:text-primary-300">Report Issues</a></li>
+            <li><a href="https://github.com/anoncam/dedpaste#contributing" class="text-primary-400 hover:text-primary-300">Contributing Guide</a></li>
+            <li><a href="https://www.npmjs.com/package/dedpaste" class="text-primary-400 hover:text-primary-300">NPM Package</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>`;
+}
 
 async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEncrypted: boolean): Promise<Response> {
   const contentType = request.headers.get('Content-Type') || 'text/plain';
