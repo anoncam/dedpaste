@@ -397,6 +397,10 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
   // Generate a unique ID for the paste
   let id = generateId();
   
+  // Ensure encrypted content is always stored with the correct content type
+  // This fixes issues with one-time encrypted pastes
+  const adjustedContentType = isEncrypted ? 'application/json' : contentType;
+  
   // For one-time pastes, use a completely different storage strategy with a prefix
   if (isOneTime) {
     // Add a prefix to clearly identify one-time pastes
@@ -404,7 +408,7 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
     
     // Create the metadata for the paste
     const metadata: PasteMetadata = {
-      contentType,
+      contentType: adjustedContentType,
       isOneTime: true, // Always true for this storage path
       createdAt: Date.now(),
     };
@@ -414,12 +418,12 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
       customMetadata: metadata as any,
     });
     
-    console.log(`Created one-time paste with storage key ${storageKey}`);
+    console.log(`Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}`);
   } else {
     // Regular paste - standard storage path
     // Create the metadata for the paste
     const metadata: PasteMetadata = {
-      contentType,
+      contentType: adjustedContentType,
       isOneTime: false, // Always false for this storage path
       createdAt: Date.now(),
     };
@@ -429,7 +433,7 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
       customMetadata: metadata as any,
     });
     
-    console.log(`Created regular paste ${id}`);
+    console.log(`Created regular paste ${id}, isEncrypted=${isEncrypted}`);
   }
   
   const baseUrl = new URL(request.url).origin;
@@ -452,7 +456,7 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
   
   // If we found a one-time paste with the prefixed key
   if (oneTimePaste) {
-    console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}`);
+    console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`);
     
     // Get the content and metadata before we delete the paste
     const content = await oneTimePaste.arrayBuffer();
@@ -461,8 +465,16 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
     try {
       const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
       contentType = metadata.contentType || 'text/plain';
+      console.log(`[TEMP PASTE] Content type from metadata: ${contentType}`);
     } catch (err) {
       console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
+    }
+    
+    // Override content type if this is an encrypted paste but the content type doesn't match
+    // This ensures proper decryption on the client side
+    if (isEncrypted && contentType !== 'application/json') {
+      console.log(`[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`);
+      contentType = 'application/json';
     }
     
     // Delete the paste immediately before returning the content
@@ -495,6 +507,7 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Encrypted': isEncrypted ? 'true' : 'false',
+        'X-One-Time': 'true', // Mark as one-time paste explicitly
       },
     });
   }
@@ -514,8 +527,16 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
   try {
     const metadata = paste.customMetadata as unknown as PasteMetadata;
     contentType = metadata.contentType || 'text/plain';
+    console.log(`[REGULAR PASTE] Content type from metadata: ${contentType}`);
   } catch (err) {
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
+  }
+  
+  // Override content type if this is an encrypted paste but the content type doesn't match
+  // This ensures proper decryption on the client side
+  if (isEncrypted && contentType !== 'application/json') {
+    console.log(`[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`);
+    contentType = 'application/json';
   }
   
   // Return the paste content with robust caching headers
