@@ -8,7 +8,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { promises as fsPromises } from 'fs';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import inquirer from 'inquirer';
 // Import clipboardy with error handling
 let clipboard;
@@ -180,20 +180,74 @@ Key Storage:
       // Log the start of execution
       logger.info('Starting key management operation', { options });
       
-      // Enhanced interactive mode takes precedence
+      // Enhanced interactive mode takes precedence but we need to ensure it doesn't hang
       if (options.enhanced) {
-        logger.debug('Entering enhanced interactive mode');
-        const { enhancedKeyManagement } = await import('./enhancedInteractiveMode.js');
-        const result = await enhancedKeyManagement();
+        logger.debug('Enhanced mode requested - using non-blocking startup');
         
-        if (!result.success) {
-          logger.error('Enhanced key management failed', { error: result.message });
-          console.error(`Error: ${result.message}`);
-          process.exit(1);
-        }
+        // Create a completely isolated process for enhanced mode
+        // This avoids all potential circular dependencies and module loading issues
+        console.log('Starting enhanced mode...');
         
-        if (result.message) {
-          console.log(result.message);
+        try {
+          // Use child_process to launch the enhanced mode in a separate process
+          // This guarantees that any hanging in module initialization won't affect the main CLI
+          const childProcess = await import('child_process');
+          const { spawn } = childProcess;
+          
+          // Get the current module directory where our launcher is located
+          const cliDir = path.dirname(fileURLToPath(import.meta.url));
+          const launcherPath = path.join(cliDir, 'enhancedModeLauncher.js');
+          
+          // Verify that the launcher exists
+          if (!fs.existsSync(launcherPath)) {
+            logger.error('Enhanced mode launcher not found', { path: launcherPath });
+            throw new Error(`Enhanced mode launcher not found at: ${launcherPath}`);
+          }
+
+          
+          // Spawn the launcher as a separate process with the right working directory
+          const enhancedProcess = spawn('node', [launcherPath], {
+            stdio: 'inherit',
+            env: process.env,
+            cwd: cliDir // Use CLI directory as working directory
+          });
+          
+          // Process termination handling
+          process.on('SIGINT', () => {
+            console.log('\nTerminating enhanced mode...');
+            enhancedProcess.kill('SIGTERM');
+            // Allow clean exit
+            setTimeout(() => process.exit(0), 300);
+          });
+          
+          // Wait for the process to complete
+          await new Promise((resolve, reject) => {
+            enhancedProcess.on('exit', (code) => {
+              clearTimeout(timeout); // Clear the timeout once process exits
+              if (code === 0) {
+                resolve();
+              } else {
+                reject(new Error(`Enhanced mode exited with code ${code}`));
+              }
+            });
+            
+            enhancedProcess.on('error', (err) => {
+              reject(err);
+            });
+          });
+          
+          // No temp file to clean up since we're using a dedicated launcher file
+          
+        } catch (enhancedError) {
+          logger.error('Enhanced mode failed', { error: enhancedError.message });
+          console.error(`Error running enhanced mode: ${enhancedError.message}`);
+          console.log('Falling back to standard interactive mode...');
+          
+          // Fall back to regular interactive mode
+          const result = await interactiveKeyManagement();
+          if (result.message) {
+            console.log(result.message);
+          }
         }
         
         return;

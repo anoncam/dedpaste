@@ -6,10 +6,42 @@ import path from 'path';
 import { promises as fsPromises } from 'fs';
 import { homedir } from 'os';
 
-// Import our unified key manager
-import * as unifiedKeyManager from './unifiedKeyManager.js';
-import { runKeyDiagnostics, formatDiagnosticsReport } from './keyDiagnostics.js';
-import { encryptContent, decryptContent } from './encryptionUtils.js';
+// Import our unified key manager with dynamic imports to prevent initialization hanging
+// We'll dynamically import modules at the time they're needed rather than at startup
+// This prevents slowdowns and hanging during CLI initialization
+let unifiedKeyManager;
+let runKeyDiagnostics;
+let formatDiagnosticsReport;
+let encryptContent;
+let decryptContent;
+let continueWithEncryption;
+let safeCheckGpgKeyring;
+
+// Function to initialize all required modules
+async function initModules() {
+  try {
+    // Import modules dynamically
+    const keyManagerModule = await import('./unifiedKeyManager.js');
+    unifiedKeyManager = keyManagerModule;
+    
+    const diagnosticsModule = await import('./keyDiagnostics.js');
+    runKeyDiagnostics = diagnosticsModule.runKeyDiagnostics;
+    formatDiagnosticsReport = diagnosticsModule.formatDiagnosticsReport;
+    
+    const encryptionModule = await import('./encryptionUtils.js');
+    encryptContent = encryptionModule.encryptContent;
+    decryptContent = encryptionModule.decryptContent;
+    
+    const helpersModule = await import('./encryptionHelpers.js');
+    continueWithEncryption = helpersModule.continueWithEncryption;
+    safeCheckGpgKeyring = helpersModule.safeCheckGpgKeyring;
+    
+    return true;
+  } catch (error) {
+    console.error(`Module initialization error: ${error.message}`);
+    return false;
+  }
+}
 
 /**
  * Show enhanced interactive key management menu
@@ -17,6 +49,17 @@ import { encryptContent, decryptContent } from './encryptionUtils.js';
  */
 async function enhancedKeyManagement() {
   try {
+    console.log(chalk.blue('Initializing key management system...'));
+    
+    // Initialize modules first
+    const modulesLoaded = await initModules();
+    if (!modulesLoaded) {
+      return {
+        success: false,
+        message: 'Failed to load required modules. Please try again.'
+      };
+    }
+    
     // Initialize the key manager
     const init = await unifiedKeyManager.initialize();
     
@@ -1024,6 +1067,17 @@ async function fixDiagnosticIssues(diagnosticResults) {
  */
 async function enhancedInteractiveSend() {
   try {
+    console.log(chalk.blue('Initializing interactive send mode...'));
+    
+    // Initialize modules first to prevent hanging
+    const modulesLoaded = await initModules();
+    if (!modulesLoaded) {
+      return {
+        success: false,
+        message: 'Failed to load required modules. Please try again.'
+      };
+    }
+    
     // Initialize the key manager
     const init = await unifiedKeyManager.initialize();
     
@@ -1113,25 +1167,183 @@ async function enhancedInteractiveSend() {
     
     let recipientId = recipient;
     
-    // Handle GPG keyring selection
+    // Handle GPG keyring selection with improved error handling
     if (recipient === 'gpg') {
-      // Check if GPG is available
-      const gpgInfo = await checkGpgKeyring();
+      console.log(chalk.blue('Checking GPG keyring (this may take a moment)...'));
+      let gpgInfo;
       
-      if (!gpgInfo.available || gpgInfo.keys.length === 0) {
-        console.log(chalk.red('\nGPG is not available or no keys found in keyring'));
-        return { success: false, message: 'GPG not available' };
+      try {
+        // Use the safe GPG check helper function with an increased timeout for better reliability
+        const { safeCheckGpgKeyring } = await import('./encryptionHelpers.js');
+        gpgInfo = await safeCheckGpgKeyring(8000); // 8 second timeout
+        
+        // Handle timeout or unavailability
+        if (!gpgInfo.available) {
+          let errorMessage = '\nGPG is not available on this system.';
+          
+          if (gpgInfo.timedOut) {
+            errorMessage = '\nGPG check timed out - this may indicate GPG is hanging or not properly configured.';
+          } else if (gpgInfo.error) {
+            errorMessage = `\nGPG error: ${gpgInfo.error}`;
+          }
+          
+          console.log(chalk.yellow(errorMessage));
+          console.log(chalk.blue('Proceeding without GPG integration...'));
+          
+          // Ask if user wants to continue with another encryption option
+          const { continueAnyway } = await inquirer.prompt([{
+            type: 'confirm',
+            name: 'continueAnyway',
+            message: 'Do you want to continue with another encryption option?',
+            default: true
+          }]);
+          
+          if (!continueAnyway) {
+            return { success: false, message: 'Operation canceled by user' };
+          }
+          
+          // Provide alternative encryption options
+          const { altRecipient } = await inquirer.prompt([{
+            type: 'list',
+            name: 'altRecipient',
+            message: 'Select an alternative recipient:',
+            choices: choices.filter(c => c.value !== 'gpg' && !c.disabled)
+          }]);
+          
+          recipientId = altRecipient;
+          // Continue with the alternative recipient using our helper function
+          return await continueWithEncryption(recipientId, message);
+        }
+      } catch (gpgError) {
+        console.error(chalk.red(`\nUnexpected error during GPG check: ${gpgError.message}`));
+        console.log(chalk.blue('Proceeding without GPG integration...'));
+        
+        // Fall back to alternative options due to the error
+        const { continueAfterError } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'continueAfterError',
+          message: 'Would you like to continue with an alternative encryption method?',
+          default: true
+        }]);
+        
+        if (!continueAfterError) {
+          return { success: false, message: 'Operation canceled due to GPG error' };
+        }
+        
+        // Provide alternative encryption options
+        const { emergencyRecipient } = await inquirer.prompt([{
+          type: 'list',
+          name: 'emergencyRecipient',
+          message: 'Select an alternative recipient:',
+          choices: choices.filter(c => c.value !== 'gpg' && !c.disabled)
+        }]);
+        
+        recipientId = emergencyRecipient;
+        return await continueWithEncryption(recipientId, message);
       }
       
-      // Create GPG key choices
-      const gpgChoices = gpgInfo.keys.map(key => {
-        const uid = key.uids.length > 0 ? key.uids[0].uid : 'Unknown';
-        return {
-          name: `${uid} (${key.id})`,
-          value: key.id,
-          short: key.id
-        };
-      });
+      // Add a function to handle alternative encryption options
+      const handleAlternativeEncryption = async (reason) => {
+        console.log(chalk.yellow(`\n${reason}`));
+        
+        // Ask if user wants to continue with another encryption option
+        const { continueWithoutGpg } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'continueWithoutGpg',
+          message: 'Would you like to continue with an alternative encryption method?',
+          default: true
+        }]);
+        
+        if (!continueWithoutGpg) {
+          return { success: false, message: 'Operation canceled by user' };
+        }
+        
+        // Provide alternative encryption options
+        const { alternativeMethod } = await inquirer.prompt([{
+          type: 'list',
+          name: 'alternativeMethod',
+          message: 'Select an alternative encryption method:',
+          choices: [
+            { name: 'Password-based encryption', value: 'password' },
+            { name: 'Standard RSA encryption', value: 'default' },
+            { name: 'Create a public paste (no encryption)', value: 'public' }
+          ]
+        }]);
+        
+        return await continueWithEncryption(alternativeMethod, message);
+      };
+      
+      // Normal flow if GPG is available
+      if (!gpgInfo || !gpgInfo.available) {
+        return await handleAlternativeEncryption('GPG is not available on this system.');
+      }
+      
+      if (!gpgInfo.keys || gpgInfo.keys.length === 0) {
+        console.log(chalk.yellow('\nNo keys found in GPG keyring'));
+        
+        // Ask if user wants to continue with another encryption option
+        const { continueWithoutGpg } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'continueWithoutGpg',
+          message: 'Would you like to continue with an alternative encryption method?',
+          default: true
+        }]);
+        
+        if (!continueWithoutGpg) {
+          return { success: false, message: 'Operation canceled - no GPG keys available' };
+        }
+        
+        // Provide alternative encryption options
+        const { alternativeMethod } = await inquirer.prompt([{
+          type: 'list',
+          name: 'alternativeMethod',
+          message: 'Select an alternative encryption method:',
+          choices: [
+            { name: 'Password-based encryption', value: 'password' },
+            { name: 'Create a public paste (no encryption)', value: 'public' }
+          ]
+        }]);
+        
+        return await continueWithEncryption(alternativeMethod, message);
+      }
+      
+      // Create GPG key choices with friendly display names
+      // Use try-catch to handle any parsing issues with GPG keys
+      let gpgChoices = [];
+      try {
+        gpgChoices = gpgInfo.keys.map(key => {
+          // Handle different key UID formats and ensure we always have a readable name
+          let displayName = 'Unknown';
+          if (key.uids && key.uids.length > 0) {
+            const uid = key.uids[0].uid || '';
+            // Extract email if available
+            const emailMatch = uid.match(/<([^>]+)>/);
+            const email = emailMatch ? emailMatch[1] : '';
+            // Extract name if available
+            const nameMatch = uid.match(/^([^<]+)/);
+            const name = nameMatch ? nameMatch[1].trim() : '';
+            
+            displayName = name ? name : email ? email : uid;
+          }
+          
+          return {
+            name: `${displayName} (${key.id})`,
+            value: key.id,
+            short: key.id
+          };
+        });
+        
+        // Sort keys alphabetically by display name for better UX
+        gpgChoices.sort((a, b) => a.name.localeCompare(b.name));
+      } catch (parseError) {
+        console.error('Error parsing GPG keys:', parseError);
+        return await handleAlternativeEncryption('Error parsing GPG keys. Please try an alternative method.');
+      }
+      
+      // Sanity check - make sure we have valid choices
+      if (!gpgChoices || gpgChoices.length === 0) {
+        return await handleAlternativeEncryption('No valid GPG keys found. Please try an alternative method.');
+      }
       
       const { gpgKey } = await inquirer.prompt([{
         type: 'list',
@@ -1165,16 +1377,49 @@ async function enhancedInteractiveSend() {
       // Encrypt for self
       encryptedContent = await encryptContent(Buffer.from(message), null, isPgp);
     } else if (recipient === 'gpg' || recipientId?.startsWith('gpg:')) {
-      // Export the GPG key and use it directly
-      const gpgKeyId = recipientId.replace('gpg:', '');
+      // Export the GPG key and use it directly with timeout protection
+      const gpgKeyId = recipientId.replace(/^gpg:/, '').trim();
       
-      console.log(chalk.blue(`\nExporting GPG key ${gpgKeyId}...`));
-      const keyContent = await unifiedKeyManager.exportGpgKey(gpgKeyId, { armor: true });
+      console.log(chalk.blue(`\nPreparing to export GPG key ${gpgKeyId}...`));
       
-      if (!keyContent) {
-        console.log(chalk.red('\nFailed to export GPG key'));
+      // Use the safe export function that has timeout protection
+      const { safeExportGpgKey } = await import('./encryptionHelpers.js');
+      const exportResult = await safeExportGpgKey(gpgKeyId, 12000); // 12 second timeout
+      
+      if (!exportResult.success) {
+        let errorMessage = '\nFailed to export GPG key';
+        
+        if (exportResult.timedOut) {
+          errorMessage = '\nGPG key export operation timed out. This could indicate GPG agent is hanging.';
+          console.log(chalk.yellow(errorMessage));
+          console.log(chalk.blue('\nTrying again with alternative encryption...'));
+          
+          // Fall back to standard encryption if GPG export times out
+          const { fallbackOption } = await inquirer.prompt([{
+            type: 'list',
+            name: 'fallbackOption',
+            message: 'Select an alternative encryption method:',
+            choices: [
+              { name: 'Encrypt with password', value: 'password' },
+              { name: 'Cancel operation', value: 'cancel' }
+            ]
+          }]);
+          
+          if (fallbackOption === 'cancel') {
+            return { success: false, message: 'Operation canceled by user' };
+          }
+          
+          // Use password-based encryption as fallback
+          return await continueWithEncryption('password', message);
+        } else if (exportResult.error) {
+          errorMessage = `\nGPG key export error: ${exportResult.error}`;
+        }
+        
+        console.log(chalk.red(errorMessage));
         return { success: false, message: 'Failed to export GPG key' };
       }
+      
+      const keyContent = exportResult.content;
       
       console.log(chalk.green('\n✓ GPG key exported successfully!'));
       console.log(chalk.blue('\nEncrypting message with PGP...'));
@@ -1199,6 +1444,22 @@ async function enhancedInteractiveSend() {
       message: `Error sending message: ${error.message}`
     };
   }
+}
+
+// Add a preload function that can be called from the CLI entry point
+// This allows the CLI to avoid hanging on startup
+export async function preloadEnhancedMode() {
+  // Just check if we're in enhanced mode without loading heavy modules
+  const enhancedMode = process.argv.includes('--enhanced');
+  
+  if (!enhancedMode) {
+    // If not in enhanced mode, don't load anything
+    return false;
+  }
+  
+  // Otherwise, preload the modules we'll need
+  console.log(chalk.blue('Loading enhanced mode modules...'));
+  return await initModules();
 }
 
 export {
