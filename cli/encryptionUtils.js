@@ -161,6 +161,14 @@ async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPass
           // If GPG keyring decryption fails, log the error and fall back to using private key
           console.log(`GPG keyring decryption failed: ${gpgError.message}`);
           console.log('Falling back to private key decryption if available...');
+          
+          // Check if we have more detailed information about why GPG failed
+          if (gpgError.keyIds && gpgError.keyIds.length > 0) {
+            console.log('This message was encrypted for the following key IDs:');
+            gpgError.keyIds.forEach(key => {
+              console.log(`- ${key.type} key: ${key.id}`);
+            });
+          }
         }
       }
       
@@ -169,16 +177,28 @@ async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPass
         // Try to find the user's PGP private key in pgp directory
         const selfKey = await getKey('self', null, 'pgp');
         if (!selfKey) {
-          throw new Error('PGP encrypted message detected but no PGP private key found. Try importing a key with --import-pgp-key.');
+          throw new Error('PGP encrypted message detected but no PGP private key found. Try importing a key with --import-pgp-key or use --use-gpg-keyring to decrypt with GPG.');
         }
         pgpPrivateKeyPath = selfKey.private;
       }
       
       // Prompt for passphrase if not provided
       if (!pgpPassphrase) {
-        // In a CLI context, we'd prompt for the passphrase
-        // For now we'll throw an error requesting it
-        throw new Error('PGP passphrase required for decryption. Please provide with --pgp-passphrase option.');
+        // Try to prompt for passphrase if running in interactive mode
+        try {
+          const inquirer = await import('inquirer');
+          const { passphrase } = await inquirer.default.prompt([{
+            type: 'password',
+            name: 'passphrase',
+            message: 'Enter PGP key passphrase:',
+            mask: '*'
+          }]);
+          
+          pgpPassphrase = passphrase;
+        } catch (promptError) {
+          // If we can't prompt (e.g., non-interactive environment), throw error
+          throw new Error('PGP passphrase required for decryption. Please provide with --pgp-passphrase option.');
+        }
       }
       
       // Read the PGP private key
@@ -195,6 +215,15 @@ async function decryptContent(encryptedBuffer, pgpPrivateKeyPath = null, pgpPass
       throw new Error(`Unsupported encryption version: ${encryptedData.version}`);
     }
   } catch (error) {
+    // Enhance error message for common issues
+    if (error.message.includes('Unexpected token') || error.message.includes('JSON')) {
+      throw new Error('Invalid encrypted message format. This may not be a dedpaste encrypted message.');
+    }
+    
+    if (error.message.includes('Bad passphrase')) {
+      throw new Error('Incorrect passphrase for PGP key. Please try again with the correct passphrase.');
+    }
+    
     throw new Error(`Decryption error: ${error.message}`);
   }
 }
