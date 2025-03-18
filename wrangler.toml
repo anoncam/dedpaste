@@ -2,6 +2,9 @@ name = "dedpaste"
 main = "src/index.ts"
 compatibility_date = "2023-10-02"
 
+[site]
+bucket = "./public"
+
 [[r2_buckets]]
 binding = "PASTE_BUCKET"
 bucket_name = "dedpaste-bucket"

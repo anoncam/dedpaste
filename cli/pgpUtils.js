@@ -772,32 +772,103 @@ async function decryptWithPgp(encryptedContent, pgpPrivateKeyString, passphrase)
       return Buffer.from('TEST MODE DECRYPTION - This would normally show decrypted content');
     }
     
-    // Decode encrypted content if it's a buffer
-    const encryptedMessage = await openpgp.readMessage({
-      armoredMessage: encryptedContent.toString()
-    });
+    // Handle armored or binary message format
+    let encryptedMessage;
+    const contentString = encryptedContent.toString();
     
-    // Read and decrypt the private key
-    const privateKey = await openpgp.decryptKey({
-      privateKey: await openpgp.readPrivateKey({ armoredKey: pgpPrivateKeyString }),
-      passphrase
-    });
+    try {
+      // First try to read as armored message (text format)
+      encryptedMessage = await openpgp.readMessage({
+        armoredMessage: contentString
+      });
+    } catch (formatError) {
+      // If that fails, try to read as binary message
+      try {
+        const binaryBuffer = Buffer.isBuffer(encryptedContent) 
+          ? encryptedContent 
+          : Buffer.from(contentString, 'binary');
+        
+        encryptedMessage = await openpgp.readMessage({
+          binaryMessage: binaryBuffer
+        });
+      } catch (binaryError) {
+        // If both formats fail, provide detailed error
+        throw new Error(`Invalid PGP message format: ${formatError.message}, Binary attempt: ${binaryError.message}`);
+      }
+    }
     
-    // Decrypt the content
-    const { data, signatures } = await openpgp.decrypt({
+    // Read and decrypt the private key with proper error handling
+    let privateKey;
+    try {
+      const readPrivateKey = await openpgp.readPrivateKey({ 
+        armoredKey: pgpPrivateKeyString 
+      });
+      
+      privateKey = await openpgp.decryptKey({
+        privateKey: readPrivateKey,
+        passphrase
+      });
+    } catch (keyError) {
+      // Handle key-specific errors
+      if (keyError.message.includes('passphrase')) {
+        throw new Error(`Incorrect passphrase for PGP key: ${keyError.message}`);
+      } else if (keyError.message.includes('no private key found')) {
+        throw new Error('Invalid PGP private key: No private key material found');
+      } else if (keyError.message.includes('Expected private key')) {
+        throw new Error('Invalid key format: The provided key is not a valid PGP private key');
+      }
+      throw keyError;
+    }
+    
+    // Options for decryption
+    const decryptOptions = {
       message: encryptedMessage,
-      decryptionKeys: privateKey
+      decryptionKeys: privateKey,
+      // Add format option to control output
+      format: 'binary'
+    };
+    
+    // Decrypt the content with timeout handling
+    let decryptPromise = openpgp.decrypt(decryptOptions);
+    
+    // Add timeout handling
+    const timeoutDuration = 30000; // 30 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('PGP decryption timeout - operation took too long'));
+      }, timeoutDuration);
     });
+    
+    // Race between decryption and timeout
+    const { data, signatures } = await Promise.race([
+      decryptPromise,
+      timeoutPromise
+    ]);
     
     // Check signatures if available
     if (signatures && signatures.length > 0) {
-      console.log('Message was signed');
-      // In a full implementation, we would verify signatures here
+      console.log(`Message was signed by ${signatures.length} ${signatures.length === 1 ? 'key' : 'keys'}`);
+      
+      // Output signature verification status
+      for (const sig of signatures) {
+        if (sig.valid === true) {
+          console.log(`✓ Valid signature from key: ${sig.keyid ? sig.keyid.toHex() : 'unknown'}`);
+        } else if (sig.valid === null) {
+          console.log(`? Unverified signature from key: ${sig.keyid ? sig.keyid.toHex() : 'unknown'}`);
+        } else {
+          console.log(`✗ Invalid signature from key: ${sig.keyid ? sig.keyid.toHex() : 'unknown'}`);
+        }
+      }
     }
     
-    // Return the decrypted content
+    // Return the decrypted content (ensure it's a Buffer)
     return Buffer.from(data);
   } catch (error) {
+    // Enhance certain error messages for better diagnostics
+    if (error.message.includes('Error decrypting message')) {
+      throw new Error('Failed to decrypt PGP message: incorrect private key or corrupted message');
+    }
+    
     throw new Error(`PGP decryption failed: ${error.message}`);
   }
 }
@@ -898,8 +969,9 @@ async function createPgpEncryptedMessage(content, pgpPublicKeyString, recipientN
 /**
  * Decrypt PGP-formatted dedpaste content
  * @param {Buffer} encryptedBuffer - Encrypted dedpaste content
- * @param {string} pgpPrivateKeyString - PGP private key
- * @param {string} passphrase - Passphrase for the private key
+ * @param {string} pgpPrivateKeyString - PGP private key (optional if using GPG keyring)
+ * @param {string} passphrase - Passphrase for the private key (optional if using GPG keyring)
+ * @param {boolean} useGpgKeyring - Whether to try GPG keyring decryption
  * @returns {Promise<Object>} - Decrypted content with metadata
  */
 async function decryptPgpMessage(encryptedBuffer, pgpPrivateKeyString, passphrase, useGpgKeyring = false) {
@@ -922,19 +994,34 @@ async function decryptPgpMessage(encryptedBuffer, pgpPrivateKeyString, passphras
       
       if (gpgResult.success) {
         console.log('Successfully decrypted with GPG keyring');
+        
+        // Create enhanced metadata
+        const enhancedMetadata = {
+          ...encryptedData.metadata,
+          decryptedWith: 'gpg-keyring',
+        };
+        
+        // Add key ID if available
         if (gpgResult.keyId) {
-          console.log(`Message was encrypted for key ID: ${gpgResult.keyId}`);
+          console.log(`Message was decrypted with key ID: ${gpgResult.keyId}`);
+          enhancedMetadata.keyId = gpgResult.keyId;
+        }
+        
+        // Add recipient info if available
+        if (gpgResult.recipient) {
+          console.log(`Message was encrypted for: ${gpgResult.recipient}`);
+          enhancedMetadata.recipient = {
+            ...enhancedMetadata.recipient,
+            name: gpgResult.recipient
+          };
         }
         
         return {
           content: gpgResult.data,
-          metadata: {
-            ...encryptedData.metadata,
-            decryptedWith: 'gpg-keyring',
-            keyId: gpgResult.keyId
-          }
+          metadata: enhancedMetadata
         };
       } else {
+        // Log detailed error for better diagnosis
         console.log(`GPG keyring decryption failed: ${gpgResult.error}`);
         
         // If we have key IDs, log them
@@ -945,9 +1032,18 @@ async function decryptPgpMessage(encryptedBuffer, pgpPrivateKeyString, passphras
           });
         }
         
-        // If we don't have a provided private key to fall back to, fail
+        // Check if we have raw error details for debugging
+        if (gpgResult.rawError) {
+          console.debug(`GPG raw error: ${gpgResult.rawError.substring(0, 200)}${gpgResult.rawError.length > 200 ? '...' : ''}`);
+        }
+        
+        // If we don't have a provided private key to fall back to, fail with detailed error
         if (!pgpPrivateKeyString) {
-          throw new Error(`GPG keyring decryption failed: ${gpgResult.error}`);
+          // Create an error with additional properties
+          const error = new Error(`GPG keyring decryption failed: ${gpgResult.error}`);
+          error.keyIds = gpgResult.keyIds;
+          error.rawError = gpgResult.rawError;
+          throw error;
         }
         
         // Otherwise, continue to try with provided key
@@ -961,15 +1057,41 @@ async function decryptPgpMessage(encryptedBuffer, pgpPrivateKeyString, passphras
       throw new Error('No PGP private key provided for decryption');
     }
     
-    // Decrypt with PGP
-    const decryptedContent = await decryptWithPgp(pgpMessage, pgpPrivateKeyString, passphrase);
+    // Validate private key format
+    if (!pgpPrivateKeyString.includes('-----BEGIN PGP PRIVATE KEY BLOCK-----')) {
+      throw new Error('Invalid PGP private key format. Key must start with "-----BEGIN PGP PRIVATE KEY BLOCK-----"');
+    }
     
-    // Return the result
-    return {
-      content: decryptedContent,
-      metadata: encryptedData.metadata
-    };
+    // Decrypt with PGP
+    try {
+      const decryptedContent = await decryptWithPgp(pgpMessage, pgpPrivateKeyString, passphrase);
+      
+      // Return the result with enhanced metadata
+      return {
+        content: decryptedContent,
+        metadata: {
+          ...encryptedData.metadata,
+          decryptedWith: 'pgp-private-key'
+        }
+      };
+    } catch (decryptError) {
+      // Handle common PGP decryption errors more gracefully
+      if (decryptError.message.includes('Error decrypting message')) {
+        throw new Error('Failed to decrypt with private key. Check that you have the correct key and passphrase.');
+      }
+      
+      if (decryptError.message.includes('passphrase')) {
+        throw new Error('Incorrect passphrase for PGP private key.');
+      }
+      
+      // Re-throw the original error for other cases
+      throw decryptError;
+    }
   } catch (error) {
+    // Add keyIds property to the error if available
+    if (error.keyIds) {
+      throw error; // Re-throw the already enhanced error
+    }
     throw new Error(`PGP message decryption failed: ${error.message}`);
   }
 }
@@ -1014,23 +1136,26 @@ async function decryptWithGpgKeyring(encryptedContent) {
   // Import the child_process module dynamically 
   const childProcess = await import('child_process');
   const { execFile } = childProcess;
+  const crypto = await import('crypto');
   
   // Promisify execFile
-  const execFilePromise = (cmd, args) => {
+  const execFilePromise = (cmd, args, options = {}) => {
     return new Promise((resolve) => {
-      execFile(cmd, args, (error, stdout, stderr) => {
+      execFile(cmd, args, options, (error, stdout, stderr) => {
         resolve({ error, stdout, stderr });
       });
     });
   };
   
   try {
-    // First, save the encrypted content to a temporary file
-    const tempFilePath = path.join(os.tmpdir(), `dedpaste-pgp-${Date.now()}.asc`);
+    // Create a secure temporary file with a random name
+    const randomId = crypto.randomBytes(16).toString('hex');
+    const tempFilePath = path.join(os.tmpdir(), `dedpaste-pgp-${randomId}.asc`);
     
-    // Write the encrypted content to the file
+    // Write the encrypted content to the file with restricted permissions
     try {
-      fs.writeFileSync(tempFilePath, encryptedContent);
+      // Use writeFileSync with mode 0600 (readable/writable only by owner)
+      fs.writeFileSync(tempFilePath, encryptedContent, { mode: 0o600 });
       console.log(`Saved encrypted content to temporary file: ${tempFilePath}`);
     } catch (writeError) {
       return {
@@ -1046,44 +1171,82 @@ async function decryptWithGpgKeyring(encryptedContent) {
     let keyIds = [];
     
     // Capture key IDs if available
-    if (listResult.stdout) {
-      // Look for "encrypted with" lines
+    if (listResult.stderr) {
+      // Look for "encrypted with" lines (GPG outputs this info to stderr)
       const encryptedWithRegex = /encrypted with\s+(\w+)\s+key,\s+ID\s+([A-F0-9]+)/gi;
       let match;
-      while ((match = encryptedWithRegex.exec(listResult.stdout)) !== null) {
+      while ((match = encryptedWithRegex.exec(listResult.stderr)) !== null) {
         const keyType = match[1];
         const keyId = match[2];
         keyIds.push({ type: keyType, id: keyId });
       }
     }
     
-    // Try to decrypt the message
-    console.log('Attempting to decrypt with GPG...');
-    const decryptResult = await execFilePromise('gpg', ['--decrypt', '--batch', tempFilePath]);
+    if (keyIds.length > 0) {
+      console.log(`Message encrypted for keys: ${keyIds.map(k => k.id).join(', ')}`);
+    }
     
-    // Always clean up the temporary file
+    // Try to decrypt the message with a timeout
+    console.log('Attempting to decrypt with GPG...');
+    
+    // Set a timeout for the GPG process (30 seconds)
+    const decryptOptions = {
+      timeout: 30000,  // 30 seconds
+      env: { ...process.env, LANG: 'C' } // Use C locale for consistent output format
+    };
+    
+    const decryptResult = await execFilePromise(
+      'gpg', 
+      ['--decrypt', '--batch', '--yes', tempFilePath],
+      decryptOptions
+    );
+    
+    // Always clean up the temporary file - use try/finally to ensure cleanup
     try {
       fs.unlinkSync(tempFilePath);
       console.log('Removed temporary file');
     } catch (cleanupError) {
       console.error(`Failed to remove temporary file: ${cleanupError.message}`);
+      // In a production environment, we might want to schedule another cleanup attempt
     }
     
     if (decryptResult.error) {
       console.log(`GPG decryption failed: ${decryptResult.error.message}`);
       
-      // Check stderr for specific errors
+      // Perform detailed error analysis
       let errorDetails = '';
-      if (decryptResult.stderr && decryptResult.stderr.includes('secret key not available')) {
-        errorDetails = 'No matching private key found in GPG keyring';
-      } else if (decryptResult.stderr) {
-        errorDetails = decryptResult.stderr.split('\n')[0]; // First line of error
+      
+      if (decryptResult.stderr) {
+        // Common GPG error patterns
+        const errorPatterns = [
+          { pattern: /secret key not available/i, message: 'No matching private key found in GPG keyring' },
+          { pattern: /decryption failed: No secret key/i, message: 'No matching private key found in GPG keyring' },
+          { pattern: /failed to start/i, message: 'Failed to start GPG process' },
+          { pattern: /bad passphrase/i, message: 'Bad passphrase for GPG key' },
+          { pattern: /operation cancelled/i, message: 'Operation cancelled by GPG' },
+          { pattern: /invalid armor/i, message: 'Invalid PGP message format' },
+          { pattern: /timeout/i, message: 'GPG operation timed out' }
+        ];
+        
+        // Check for specific error patterns
+        for (const { pattern, message } of errorPatterns) {
+          if (pattern.test(decryptResult.stderr)) {
+            errorDetails = message;
+            break;
+          }
+        }
+        
+        // If no specific pattern matched, use the first line of stderr
+        if (!errorDetails) {
+          errorDetails = decryptResult.stderr.split('\n')[0].trim();
+        }
       }
       
       return {
         success: false,
         keyIds: keyIds.length > 0 ? keyIds : undefined,
-        error: errorDetails || decryptResult.error.message
+        error: errorDetails || decryptResult.error.message,
+        rawError: decryptResult.stderr // Include raw error for debugging
       };
     }
     
@@ -1092,17 +1255,27 @@ async function decryptWithGpgKeyring(encryptedContent) {
     
     // Extract any additional info from stderr (GPG prints informational messages there)
     let decryptionKeyId = '';
+    let recipientInfo = null;
+    
     if (decryptResult.stderr) {
+      // Extract key ID used for decryption
       const keyIdMatch = decryptResult.stderr.match(/encrypted with.*ID ([A-F0-9]+)/i);
       if (keyIdMatch && keyIdMatch[1]) {
         decryptionKeyId = keyIdMatch[1];
+      }
+      
+      // Look for recipient information (for better diagnostics)
+      const recipientMatch = decryptResult.stderr.match(/encrypted for: "([^"]+)"/);
+      if (recipientMatch && recipientMatch[1]) {
+        recipientInfo = recipientMatch[1];
       }
     }
     
     return {
       success: true,
       data: Buffer.from(decryptResult.stdout),
-      keyId: decryptionKeyId
+      keyId: decryptionKeyId,
+      recipient: recipientInfo
     };
     
   } catch (error) {
