@@ -1329,16 +1329,16 @@ For more advanced options, use the subcommands:
 // Add a default command that handles unencrypted pastes
 program
   .action(async (options) => {
-    try {
-      // Only show help if no arguments are provided and no stdin (user is at a TTY)
-      if (process.argv.length <= 2 && process.stdin.isTTY) {
-        program.help();
-        return;
-      }
+    // Only show help if no arguments are provided and no stdin (user is at a TTY)
+    if (process.argv.length <= 2 && process.stdin.isTTY) {
+      program.help();
+      return;
+    }
 
-      let content;
-      let contentType;
-      
+    let content;
+    let contentType;
+    
+    try {
       // Check if we should use enhanced interactive mode
       if (options.interactive && options.enhanced) {
         console.log('Using enhanced interactive mode...');
@@ -1366,25 +1366,26 @@ program
           if (!fs.existsSync(options.file)) {
             console.error(`Error: File '${options.file}' does not exist`);
             process.exit(1);
-        }
+          }
         
-        content = fs.readFileSync(options.file);
-        // Try to detect the content type from the file extension
-        contentType = options.type || lookup(options.file) || 'text/plain';
-      } else {
-        // Read from stdin
-        const stdinBuffer = [];
-        for await (const chunk of process.stdin) {
-          stdinBuffer.push(chunk);
+          content = fs.readFileSync(options.file);
+          // Try to detect the content type from the file extension
+          contentType = options.type || lookup(options.file) || 'text/plain';
+        } else {
+          // Read from stdin
+          const stdinBuffer = [];
+          for await (const chunk of process.stdin) {
+            stdinBuffer.push(chunk);
+          }
+          
+          if (stdinBuffer.length === 0) {
+            console.error('Error: No input provided. Pipe content to dedpaste or use --file option.');
+            process.exit(1);
+          }
+          
+          content = Buffer.concat(stdinBuffer);
+          contentType = options.type || 'text/plain';
         }
-        
-        if (stdinBuffer.length === 0) {
-          console.error('Error: No input provided. Pipe content to dedpaste or use --file option.');
-          process.exit(1);
-        }
-        
-        content = Buffer.concat(stdinBuffer);
-        contentType = options.type || 'text/plain';
       }
       
       // Check if encryption is requested (manually check for the flag)
@@ -1395,37 +1396,35 @@ program
         // We need to use the full send command implementation here
         // rather than trying to redirect to it, since we would lose stdin
         
-        // Use the created content as is
         try {
-          // Encrypt the content
-          try {
-            // Check if PGP mode is requested
-            const usePgp = options.pgp;
-            
-            // If PGP key file is provided, read it and use it directly
-            if (options.pgpKeyFile) {
-              const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
-              content = await createPgpEncryptedMessage(content, pgpKeyContent, 'self');
-            } else {
-              // Use the standard encryption flow with PGP option
-              content = await encryptContent(content, null, usePgp);
-            }
-            
-            // Log PGP mode if used
-            if (usePgp || options.pgpKeyFile) {
-              console.log('Using PGP encryption');
-            }
-            
-            // Set content type to application/json for encrypted content
-            contentType = 'application/json';
-          } catch (error) {
-            console.error(`Encryption failed: ${error.message}`);
-            process.exit(1);
+          // Check if PGP mode is requested
+          const usePgp = options.pgp;
+          
+          // If PGP key file is provided, read it and use it directly
+          if (options.pgpKeyFile) {
+            const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
+            content = await createPgpEncryptedMessage(content, pgpKeyContent, 'self');
+          } else {
+            // Use the standard encryption flow with PGP option
+            content = await encryptContent(content, null, usePgp);
           }
           
-          // Determine the endpoint for encrypted pastes
-          const endpoint = options.temp ? '/e/temp' : '/e/upload';
+          // Log PGP mode if used
+          if (usePgp || options.pgpKeyFile) {
+            console.log('Using PGP encryption');
+          }
           
+          // Set content type to application/json for encrypted content
+          contentType = 'application/json';
+        } catch (error) {
+          console.error(`Encryption failed: ${error.message}`);
+          process.exit(1);
+        }
+        
+        // Determine the endpoint for encrypted pastes
+        const endpoint = options.temp ? '/e/temp' : '/e/upload';
+        
+        try {
           // Make the API request
           const response = await fetch(`${API_URL}${endpoint}`, {
             method: 'POST',
@@ -1475,7 +1474,7 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
           }
           return;
         } catch (error) {
-          console.error(`Error: ${error.message}`);
+          console.error(`Network error: ${error.message}`);
           process.exit(1);
         }
       }
@@ -1483,8 +1482,8 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
       // Determine the endpoint based on whether it's a temporary paste
       const endpoint = options.temp ? '/temp' : '/upload';
       
-      // Make the API request
       try {
+        // Make the API request
         const response = await fetch(`${API_URL}${endpoint}`, {
           method: 'POST',
           headers: {
