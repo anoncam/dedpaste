@@ -7,7 +7,7 @@
   "scripts": {
     "test": "NODE_OPTIONS=\"--experimental-vm-modules\" mocha test/**/*.test.js",
     "dev": "npm run build:tailwind && concurrently \"npm run watch:tailwind\" \"wrangler dev\"",
-    "deploy": "npm run build:tailwind && wrangler deploy --no-bundle",
+    "deploy": "npm run build && wrangler deploy",
     "build": "tsc && npm run build:tailwind",
     "build:tailwind": "tailwindcss -i src/styles/tailwind.css -o public/styles.css --minify",
     "watch:tailwind": "tailwindcss -i src/styles/tailwind.css -o public/styles.css --watch",

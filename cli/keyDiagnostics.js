@@ -264,12 +264,49 @@ async function checkGpgKeyring() {
     const childProcess = await import('child_process');
     const { execFile } = childProcess;
     
-    // Promisify execFile
-    const execFilePromise = (cmd, args) => {
+    // Promisify execFile with timeout and kill functionality
+    const execFilePromise = (cmd, args, timeout = 5000) => {
       return new Promise((resolve) => {
-        execFile(cmd, args, (error, stdout, stderr) => {
-          resolve({ error, stdout, stderr });
-        });
+        let procKilled = false;
+        let proc;
+        
+        // Set a timeout to avoid hanging
+        const timeoutId = setTimeout(() => {
+          procKilled = true;
+          if (proc && proc.pid) {
+            try {
+              // Force kill the process if it doesn't respond
+              process.kill(proc.pid, 'SIGKILL');
+            } catch (killError) {
+              // Ignore kill errors - process might have already exited
+            }
+          }
+          resolve({ 
+            error: new Error('Command timed out after ' + timeout + 'ms'), 
+            stdout: '', 
+            stderr: 'Timeout - process killed to prevent hanging', 
+            timedOut: true
+          });
+        }, timeout);
+        
+        try {
+          proc = execFile(cmd, args, { timeout: timeout - 500 }, (error, stdout, stderr) => {
+            if (procKilled) return; // Already handled by timeout
+            clearTimeout(timeoutId);
+            resolve({ error, stdout, stderr, timedOut: false });
+          });
+          
+          // Additional safeguards for unresponsive processes
+          proc.on('error', (err) => {
+            if (procKilled) return; // Already handled by timeout
+            clearTimeout(timeoutId);
+            resolve({ error: err, stdout: '', stderr: err.message, timedOut: false });
+          });
+        } catch (execError) {
+          if (procKilled) return; // Already handled by timeout
+          clearTimeout(timeoutId);
+          resolve({ error: execError, stdout: '', stderr: execError.message, timedOut: false });
+        }
       });
     };
 
@@ -287,8 +324,8 @@ async function checkGpgKeyring() {
       result.available = true;
     }
     
-    // List keys
-    const keyList = await execFilePromise('gpg', ['--list-keys', '--with-colons']);
+    // List keys with a longer timeout for slow GPG agents
+    const keyList = await execFilePromise('gpg', ['--list-keys', '--with-colons'], 8000);
     
     if (!keyList.error && keyList.stdout) {
       // Parse colon format
