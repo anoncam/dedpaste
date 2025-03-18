@@ -71,13 +71,14 @@ source ~/.zshrc
 
 ## Usage
 
-DedPaste CLI has five main command modes:
+DedPaste CLI has six main command modes:
 
 1. **Default mode** - Basic paste operations (no subcommand)
 2. **`keys`** - Key management operations
-3. **`send`** - Create and send encrypted pastes
-4. **`get`** - Retrieve and decrypt pastes
-5. **`completion`** - Generate shell auto-completion scripts
+3. **`keys:enhanced`** - Enhanced interactive key management (recommended)
+4. **`send`** - Create and send encrypted pastes
+5. **`get`** - Retrieve and decrypt pastes
+6. **`completion`** - Generate shell auto-completion scripts
 
 ### Basic Usage (Default Command)
 
@@ -104,7 +105,7 @@ echo "content" | dedpaste --output
 echo "Secret data" | dedpaste --encrypt
 ```
 
-### Key Management (`keys` Command)
+### Key Management (`keys` and `keys:enhanced` Commands)
 
 ```bash
 # Generate a new key pair (required before encryption)
@@ -127,6 +128,9 @@ dedpaste keys --remove alice
 
 # Interactive key management (menu-driven interface)
 dedpaste keys --interactive
+
+# Enhanced interactive key management (recommended - full TUI interface)
+dedpaste keys:enhanced
 ```
 
 ### PGP Integration

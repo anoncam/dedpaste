@@ -1,47 +1,16 @@
 #!/usr/bin/env node
 /**
- * Enhanced mode launcher - TypeScript implementation
- * A direct approach to resolve hanging issues when launching enhanced mode
+ * Enhanced mode launcher - Direct approach
+ * Simplified launcher that works more like our debug script
  */
 
-// Using require-style imports for Node.js built-ins to avoid TypeScript module resolution issues
-const url = require('url');
-const path = require('path');
-const fs = require('fs');
-const childProcess = require('child_process');
-const { fileURLToPath } = url;
-const { spawn } = childProcess;
-
-interface ProcessResult {
-  success: boolean;
-  message?: string;
-  data?: any;
-}
-
-// Create a debug log with timestamps
+// Debug logging helper
 const debugLog = (message: string): void => {
   const timestamp = new Date().toISOString();
   console.log(`[${timestamp}] ${message}`);
 };
 
 debugLog('Enhanced mode launcher started');
-
-// Get the current file's directory path
-// Get current file path using __filename which is available in both CommonJS and when transpiled from ESM
-const getCurrentFilePath = () => {
-  try {
-    // Try to use __filename directly (works in CommonJS)
-    // @ts-ignore: Allow __filename usage which is defined at runtime
-    return __filename; 
-  } catch (e) {
-    // Fallback
-    return path.join(process.cwd(), 'cli', 'enhancedModeLauncher.js');
-  }
-};
-
-const currentFilePath = getCurrentFilePath();
-const cliDir = path.dirname(currentFilePath);
-debugLog(`CLI directory: ${cliDir}`);
 
 // Setup graceful shutdown handler for Ctrl+C
 process.on('SIGINT', () => {
@@ -50,65 +19,53 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-// Function to safely import modules with timeout protection
-async function safeImport<T>(modulePath: string): Promise<T> {
-  debugLog(`Importing module: ${modulePath}`);
+// Use a simple, direct approach to load and execute the enhanced mode
+async function runEnhancedMode() {
+  debugLog('Starting enhanced mode directly');
   
   try {
-    return await import(modulePath) as Promise<T>;
-  } catch (err) {
-    const error = err as Error;
-    debugLog(`Error importing module ${modulePath}: ${error.message}`);
-    throw error;
-  }
-}
-
-// Display directory contents for debugging
-try {
-  debugLog('CLI directory contents:');
-  const dirContents = fs.readdirSync(cliDir);
-  dirContents.forEach((file: string) => debugLog(` - ${file}`));
-} catch (err) {
-  const error = err as Error;
-  debugLog(`Failed to list directory: ${error.message}`);
-}
-
-// Enhanced mode entry point
-async function runEnhancedMode(): Promise<void> {
-  
-  try {
-    // Import directly from enhancedInteractiveMode.js
-    const modulePath = path.join(cliDir, 'enhancedInteractiveMode.js');
+    // Import with a timeout to prevent hanging
+    debugLog('Importing enhancedInteractiveMode.js');
     
-    if (!fs.existsSync(modulePath)) {
-      debugLog(`Module not found at ${modulePath}`);
-      throw new Error(`Cannot find required module at ${modulePath}`);
+    let enhancedKeyManagement;
+    try {
+      // Set a timeout for the dynamic import
+      const importTimeout = setTimeout(() => {
+        throw new Error('Import timed out after 10 seconds');
+      }, 10000);
+      
+      // Attempt to dynamically import the module
+      const module = await import('./enhancedInteractiveMode.js');
+      clearTimeout(importTimeout);
+      enhancedKeyManagement = module.enhancedKeyManagement;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to import enhancedInteractiveMode.js: ${errorMessage}`);
     }
     
-    // Import the module using a dynamic import (works in both ESM and CommonJS when transpiled)
-    debugLog('Starting module import');
-    // Use dynamic import wrapped in a try/catch for better error handling
-    const enhancedModuleImport = await new Promise<any>((resolve, reject) => {
-      try {
-        // Use dynamic import via require for better CommonJS compatibility
-        const importedModule = require(modulePath);
-        resolve(importedModule);
-      } catch (error) {
-        reject(error);
-      }
-    });
+    debugLog('Successfully imported enhancedKeyManagement function');
     
-    const enhancedModule = enhancedModuleImport;
-    debugLog('Enhanced module loaded successfully');
-    
-    // Check if the module has the required function
-    if (typeof enhancedModule.enhancedKeyManagement !== 'function') {
-      throw new Error('enhancedKeyManagement function not found in module');
+    if (typeof enhancedKeyManagement !== 'function') {
+      throw new Error('enhancedKeyManagement is not a function');
     }
     
-    debugLog('Starting enhancedKeyManagement');
-    // Run the enhanced key management
-    const result = await enhancedModule.enhancedKeyManagement();
+    // Execute with a timeout to prevent hanging
+    debugLog('Executing enhancedKeyManagement function');
+    
+    let result;
+    try {
+      // Set a timeout for the execution
+      const executionTimeout = setTimeout(() => {
+        throw new Error('Operation timed out after 120 seconds');
+      }, 120000);
+      
+      // Execute the function
+      result = await enhancedKeyManagement();
+      clearTimeout(executionTimeout);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to execute enhancedKeyManagement: ${errorMessage}`);
+    }
     
     debugLog('enhancedKeyManagement completed');
     
@@ -124,28 +81,25 @@ async function runEnhancedMode(): Promise<void> {
     }
     
     debugLog('Enhanced mode completed successfully');
-    // Process completed successfully
     process.exit(0);
   } catch (error) {
-    const err = error as Error;
-    debugLog(`Enhanced mode error: ${err.message}`);
-    if (err.stack) {
-      debugLog(`Stack trace: ${err.stack}`);
+    // Handle any errors
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    debugLog(`Enhanced mode error: ${errorMessage}`);
+    console.error(`Enhanced mode error: ${errorMessage}`);
+    
+    if (error instanceof Error && error.stack) {
+      debugLog(`Stack trace: ${error.stack}`);
     }
     
-    // Log detailed error information to help with debugging
-    debugLog(`Error details: ${err.message}`);
-    if (err.stack) {
-      debugLog(`Stack trace: ${err.stack}`);
-    }
-    console.error(`Enhanced mode error: ${err.message}`);
     process.exit(1);
   }
 }
 
 // Run the enhanced mode
-runEnhancedMode().catch(err => {
-  debugLog(`Unhandled promise rejection: ${err.message}`);
-  console.error(`Critical error in enhanced mode: ${err.message}`);
+runEnhancedMode().catch(error => {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  debugLog(`Unhandled promise rejection: ${errorMessage}`);
+  console.error(`Critical error in enhanced mode: ${errorMessage}`);
   process.exit(1);
 });

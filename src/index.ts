@@ -303,7 +303,10 @@ echo "PGP Secret" | dedpaste send --encrypt --for user@example.com --pgp</code><
         <div class="grid md:grid-cols-2 gap-6">
           <div class="card">
             <h3 class="text-xl font-semibold text-white mb-4">Key Management</h3>
-            <pre><code># List all your keys
+            <pre><code># Enhanced interactive key management (recommended)
+dedpaste keys:enhanced
+
+# List all your keys
 dedpaste keys --list
 
 # Add a friend's public key
