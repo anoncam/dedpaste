@@ -37,4 +37,7 @@ yarn-error.log*
 # Cloudflare Worker dev files
 worker-configuration.json
 
+# Ensure CSS build files are not ignored
+!public/styles.css
+
 # Test comment for PR workflow testing
