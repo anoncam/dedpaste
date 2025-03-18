@@ -86,6 +86,7 @@ USAGE:
   $ dedpaste --temp              Create a one-time paste (deleted after viewing)
   $ dedpaste --encrypt           Create an encrypted paste
   $ dedpaste keys                Manage encryption keys
+  $ dedpaste keys:enhanced       Manage keys with enhanced interactive UI
   $ dedpaste send                Create and send an encrypted paste
   $ dedpaste get <url-or-id>     Retrieve and display a paste
   $ dedpaste completion          Generate shell completion scripts
@@ -94,12 +95,74 @@ EXAMPLES:
   $ echo "Hello, world!" | dedpaste
   $ dedpaste --file secret.txt --temp --encrypt
   $ dedpaste keys --gen-key
+  $ dedpaste keys:enhanced       # Use the enhanced UI for key management
   $ dedpaste send --encrypt --for alice --temp
   $ dedpaste get https://paste.d3d.dev/AbCdEfGh
   $ dedpaste completion --bash > ~/.dedpaste-completion.bash
 `);
 
 // Add a command to manage keys
+// Add a special direct command for enhanced mode
+program
+  .command('keys:enhanced')
+  .description('Manage encryption keys in enhanced interactive TUI mode')
+  .action(async () => {
+    try {
+      const { spawn } = await import('child_process');
+      const { fileURLToPath } = await import('url');
+      const path = await import('path');
+      
+      // Get the path to the current module directory
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      
+      const enhancedLauncherPath = path.join(__dirname, 'enhancedModeLauncher.js');
+      
+      console.log('Starting enhanced mode...');
+      
+      // Spawn the launcher as a separate process
+      const enhancedProcess = spawn('node', [enhancedLauncherPath], {
+        stdio: 'inherit',
+        env: process.env
+      });
+      
+      // Handle process events
+      process.on('SIGINT', () => {
+        console.log('\nTerminating enhanced mode...');
+        enhancedProcess.kill('SIGTERM');
+        // Allow clean exit
+        setTimeout(() => process.exit(0), 300);
+      });
+      
+      // Wait for the process to complete with a timeout
+      await new Promise((resolve, reject) => {
+        // Set a timeout to prevent hanging
+        const timeout = setTimeout(() => {
+          console.log('\nEnhanced mode is taking too long. Terminating...');
+          enhancedProcess.kill('SIGTERM');
+          reject(new Error('Enhanced mode timed out'));
+        }, 60000); // 60 second timeout
+        
+        enhancedProcess.on('exit', (code) => {
+          clearTimeout(timeout);
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Enhanced mode exited with code ${code}`));
+          }
+        });
+        
+        enhancedProcess.on('error', (err) => {
+          clearTimeout(timeout);
+          reject(err);
+        });
+      });
+    } catch (error) {
+      console.error(`Error running enhanced mode: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
 program
   .command('keys')
   .description('Manage encryption keys for secure communication')
@@ -141,6 +204,7 @@ Examples:
   $ dedpaste keys --add-friend alice --key-file alice_public.pem  # Add a friend's key
   $ dedpaste keys --my-key                                # Display your public key
   $ dedpaste keys --interactive                           # Use interactive mode
+  $ dedpaste keys:enhanced                               # Use enhanced UI (recommended)
   
 PGP Integration:
   $ dedpaste keys --pgp-key user@example.com              # Add a PGP key from keyservers
@@ -182,11 +246,12 @@ Key Storage:
       
       // Enhanced interactive mode takes precedence but we need to ensure it doesn't hang
       if (options.enhanced) {
-        logger.debug('Enhanced mode requested - using non-blocking startup');
+        logger.debug('Enhanced mode requested - using non-blocking startup', { options });
+        console.log('Starting enhanced mode...');
+        console.log('Debug info: enhanced flag =', options.enhanced);
         
         // Create a completely isolated process for enhanced mode
         // This avoids all potential circular dependencies and module loading issues
-        console.log('Starting enhanced mode...');
         
         try {
           // Use child_process to launch the enhanced mode in a separate process
@@ -206,7 +271,7 @@ Key Storage:
 
           
           // Spawn the launcher as a separate process with the right working directory
-          const enhancedProcess = spawn('node', [launcherPath], {
+          const enhancedProcess = spawn('node', [launcherPath, '--debug'], {
             stdio: 'inherit',
             env: process.env,
             cwd: cliDir // Use CLI directory as working directory
@@ -220,10 +285,17 @@ Key Storage:
             setTimeout(() => process.exit(0), 300);
           });
           
-          // Wait for the process to complete
+          // Wait for the process to complete with a timeout
           await new Promise((resolve, reject) => {
+            // Set a timeout to prevent hanging
+            const timeout = setTimeout(() => {
+              console.log('\nEnhanced mode is taking too long. Terminating...');
+              enhancedProcess.kill('SIGTERM');
+              reject(new Error('Enhanced mode timed out'));
+            }, 30000); // 30 second timeout
+            
             enhancedProcess.on('exit', (code) => {
-              clearTimeout(timeout); // Clear the timeout once process exits
+              clearTimeout(timeout);
               if (code === 0) {
                 resolve();
               } else {
@@ -232,6 +304,7 @@ Key Storage:
             });
             
             enhancedProcess.on('error', (err) => {
+              clearTimeout(timeout);
               reject(err);
             });
           });
@@ -239,8 +312,9 @@ Key Storage:
           // No temp file to clean up since we're using a dedicated launcher file
           
         } catch (enhancedError) {
-          logger.error('Enhanced mode failed', { error: enhancedError.message });
+          logger.error('Enhanced mode failed', { error: enhancedError.message, stack: enhancedError.stack });
           console.error(`Error running enhanced mode: ${enhancedError.message}`);
+          console.error('Stack trace:', enhancedError.stack);
           console.log('Falling back to standard interactive mode...');
           
           // Fall back to regular interactive mode

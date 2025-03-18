@@ -1,8 +1,42 @@
 #!/usr/bin/env node
+"use strict";
 /**
  * Enhanced mode launcher - Direct approach
  * Simplified launcher that works more like our debug script
  */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 // Debug logging helper
 const debugLog = (message) => {
     const timestamp = new Date().toISOString();
@@ -19,43 +53,17 @@ process.on('SIGINT', () => {
 async function runEnhancedMode() {
     debugLog('Starting enhanced mode directly');
     try {
-        // Import with a timeout to prevent hanging
+        // Import the enhanced mode module directly
         debugLog('Importing enhancedInteractiveMode.js');
-        let enhancedKeyManagement;
-        try {
-            // Set a timeout for the dynamic import
-            const importTimeout = setTimeout(() => {
-                throw new Error('Import timed out after 10 seconds');
-            }, 10000);
-            // Attempt to dynamically import the module
-            const module = await import('./enhancedInteractiveMode.js');
-            clearTimeout(importTimeout);
-            enhancedKeyManagement = module.enhancedKeyManagement;
-        }
-        catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            throw new Error(`Failed to import enhancedInteractiveMode.js: ${errorMessage}`);
-        }
+        // Now using proper type declaration file
+        const { enhancedKeyManagement } = await Promise.resolve().then(() => __importStar(require('./enhancedInteractiveMode.js')));
         debugLog('Successfully imported enhancedKeyManagement function');
         if (typeof enhancedKeyManagement !== 'function') {
             throw new Error('enhancedKeyManagement is not a function');
         }
-        // Execute with a timeout to prevent hanging
+        // Execute enhanced key management
         debugLog('Executing enhancedKeyManagement function');
-        let result;
-        try {
-            // Set a timeout for the execution
-            const executionTimeout = setTimeout(() => {
-                throw new Error('Operation timed out after 120 seconds');
-            }, 120000);
-            // Execute the function
-            result = await enhancedKeyManagement();
-            clearTimeout(executionTimeout);
-        }
-        catch (err) {
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            throw new Error(`Failed to execute enhancedKeyManagement: ${errorMessage}`);
-        }
+        const result = await enhancedKeyManagement();
         debugLog('enhancedKeyManagement completed');
         // Handle the result
         if (!result.success) {
@@ -87,4 +95,3 @@ runEnhancedMode().catch(error => {
     console.error(`Critical error in enhanced mode: ${errorMessage}`);
     process.exit(1);
 });
-export {};
