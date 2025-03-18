@@ -1335,6 +1335,9 @@ program
       return;
     }
 
+    console.log("DEBUG: Command line options:", options);
+    console.log("DEBUG: Arguments:", process.argv);
+
     let content;
     let contentType;
     
