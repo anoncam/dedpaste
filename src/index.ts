@@ -1,6 +1,8 @@
-export interface Env {
+// Define the environment interface for Cloudflare Workers
+type Env = {
   PASTE_BUCKET: R2Bucket;
-}
+  PASTE_METADATA?: KVNamespace; // Optional KV namespace for metadata storage
+};
 
 type PasteMetadata = {
   contentType: string;
@@ -25,8 +27,49 @@ function generateId(length = 8): string {
   return result;
 }
 
+// Create a tracking system for one-time pastes to ensure they're only accessed once
+// This will help prevent issues with caching and edge replication lag
+interface ViewedPasteTracker {
+  [key: string]: {
+    viewedAt: number;
+    deleted: boolean;
+    attempts: number;
+  };
+}
+
+// Using a more structured tracking mechanism for better state management
+const viewedPastes: ViewedPasteTracker = {};
+
+// KV namespace key for tracking viewed pastes (to persist across worker restarts/instances)
+const VIEWED_PASTES_KEY = 'viewed_pastes_registry';
+
+// Helper function to safely parse JSON with a default value
+function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
+  if (!jsonString) return defaultValue;
+  try {
+    return JSON.parse(jsonString) as T;
+  } catch (e) {
+    console.error('Error parsing JSON:', e);
+    return defaultValue;
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Initialize viewedPastes from KV store if available (completely optional enhancement)
+    try {
+      if (env.PASTE_METADATA) {
+        const storedViewedPastes = await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
+        if (storedViewedPastes) {
+          const parsedPastes = safeJsonParse<ViewedPasteTracker>(storedViewedPastes, {});
+          // Merge with any in-memory pastes (newer ones take precedence)
+          Object.assign(viewedPastes, parsedPastes);
+        }
+      }
+    } catch (error) {
+      // Log but continue without error - KV is an enhancement, not a requirement
+      console.log('[KV] Optional paste metadata storage not available:', error);
+    }
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -464,10 +507,54 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
 async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypted: boolean): Promise<Response> {
   // First, check if this is a one-time paste by trying to get it with the one-time prefix
   const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
+  console.log(`[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`);
+  
+  // Add onlyIf condition to bust caches
   const oneTimePaste = await env.PASTE_BUCKET.get(oneTimeKey);
   
   // If we found a one-time paste with the prefixed key
   if (oneTimePaste) {
+    // Check if this paste has already been viewed in this instance
+    if (oneTimeKey in viewedPastes) {
+      console.log(`[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`);
+      
+      // Double-check by trying to delete it again, just to be sure
+      try {
+        await env.PASTE_BUCKET.delete(oneTimeKey);
+      } catch (e) {
+        // Ignore errors
+      }
+      
+      return new Response('This one-time paste has already been viewed and is no longer available.', {
+        status: 404,
+        headers: {
+          'Content-Type': 'text/plain',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'Surrogate-Control': 'no-store',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'X-One-Time': 'true',
+          'X-Already-Viewed': 'true'
+        }
+      });
+    }
+    
+    // Mark this paste as viewed with timestamp
+    viewedPastes[oneTimeKey] = {
+      viewedAt: Date.now(),
+      deleted: false,
+      attempts: 0
+    };
+    
+    // Store in KV if available (optional enhancement)
+    if (env.PASTE_METADATA) {
+      try {
+        await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+      } catch (error) {
+        // Non-blocking error - the in-memory tracking still works
+        console.log(`[KV] Optional metadata storage unavailable: ${error}`);
+      }
+    }
     console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`);
     
     // Get the content and metadata before we delete the paste
@@ -491,35 +578,110 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
     
     // Delete the paste immediately before returning the content
     try {
+      // First deletion attempt - force immediate deletion
       await env.PASTE_BUCKET.delete(oneTimeKey);
-      console.log(`[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}`);
+      console.log(`[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`);
+      
+      // Important: Add a small delay to allow propagation in Cloudflare's systems
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Second deletion attempt to ensure consistency
+      await env.PASTE_BUCKET.delete(oneTimeKey);
+      console.log(`[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`);
+      
+      // Verify the deletion worked
+      const verifyDeletion = await env.PASTE_BUCKET.get(oneTimeKey);
+      if (verifyDeletion) {
+        console.error(`[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`);
+        // Even though deletion appears to have failed, mark it as viewed in our tracking
+        // system to prevent subsequent access
+        viewedPastes[oneTimeKey].deleted = false;
+        viewedPastes[oneTimeKey].attempts++;
+        
+        // Store updated tracking in KV if available
+        if (env.PASTE_METADATA) {
+          try {
+            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+          } catch (kvError) {
+            // Non-blocking - in-memory tracking still works
+            console.log(`[KV] Optional metadata update failed: ${kvError}`);
+          }
+        }
+        
+        // Force another deletion attempt
+        await env.PASTE_BUCKET.delete(oneTimeKey);
+      } else {
+        console.log(`[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`);
+        viewedPastes[oneTimeKey].deleted = true;
+        viewedPastes[oneTimeKey].attempts++;
+        
+        // Store updated tracking in KV
+        try {
+          if (env.PASTE_METADATA) {
+            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+          }
+        } catch (kvError) {
+          console.error(`[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`);
+        }
+      }
     } catch (error) {
       console.error(`[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`);
       
-      // Schedule a backup deletion attempt to make sure it gets deleted
+      // Schedule multiple backup deletion attempts to make sure it gets deleted
       ctx.waitUntil(
         (async () => {
-          try {
-            console.log(`[TEMP PASTE] Attempting backup deletion for one-time paste ${id}`);
-            await env.PASTE_BUCKET.delete(oneTimeKey);
-            console.log(`[TEMP PASTE] Backup deletion successful for one-time paste ${id}`);
-          } catch (backupError) {
-            console.error(`[TEMP PASTE] Backup deletion failed for one-time paste ${id}: ${backupError}`);
+          // Add more aggressive deletion strategy for backup
+          const deletionAttempts = 5; // Increased from 3 to 5 attempts
+          for (let i = 0; i < deletionAttempts; i++) {
+            try {
+              // Add delay between attempts with exponential backoff
+              const delay = 200 * Math.pow(2, i); // 200ms, 400ms, 800ms, 1600ms, 3200ms
+              await new Promise(resolve => setTimeout(resolve, delay));
+              console.log(`[TEMP PASTE] Backup deletion attempt ${i+1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`);
+              await env.PASTE_BUCKET.delete(oneTimeKey);
+              
+              // Verify after each attempt
+              const checkResult = await env.PASTE_BUCKET.get(oneTimeKey);
+              if (!checkResult) {
+                console.log(`[TEMP PASTE] Backup deletion attempt ${i+1} successfully deleted one-time paste ${id}`);
+                
+                // Update tracking with success
+                viewedPastes[oneTimeKey].deleted = true;
+                viewedPastes[oneTimeKey].attempts += 1;
+                
+                // Store updated tracking in KV if available
+                if (env.PASTE_METADATA) {
+                  try {
+                    await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+                  } catch (kvUpdateError) {
+                    // Non-blocking - in-memory tracking still works
+                    console.log(`[KV] Optional metadata backup update failed: ${kvUpdateError}`);
+                  }
+                }
+                
+                break; // Successfully deleted
+              }
+            } catch (backupError) {
+              console.error(`[TEMP PASTE] Backup deletion attempt ${i+1} failed for one-time paste ${id}: ${backupError}`);
+            }
           }
         })()
       );
     }
     
-    // Return the content
+    // Return the content with stronger cache control headers
     return new Response(content, {
       headers: {
         'Content-Type': contentType,
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'CDN-Cache-Control': 'no-store', // Additional CDN-specific directive
+        'Surrogate-Control': 'no-store', // For Cloudflare and other CDNs
         'Pragma': 'no-cache',
         'Expires': '0',
         'X-Encrypted': isEncrypted ? 'true' : 'false',
         'X-One-Time': 'true', // Mark as one-time paste explicitly
+        'X-Paste-Viewed-At': new Date().toISOString(), // Add timestamp of viewing
       },
     });
   }

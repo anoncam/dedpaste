@@ -1,6 +1,10 @@
 name = "dedpaste"
-main = "src/index.ts"
+main = "dist/index.js"
 compatibility_date = "2023-10-02"
+
+# Build configuration
+[build]
+command = "npm run build"
 
 [site]
 bucket = "./public"
@@ -9,3 +13,13 @@ bucket = "./public"
 binding = "PASTE_BUCKET"
 bucket_name = "dedpaste-bucket"
 preview_bucket_name = "dedpaste-bucket-preview"
+
+# To enable enhanced tracking of one-time pastes with KV, uncomment and configure these lines:
+# First run: wrangler kv:namespace create PASTE_METADATA
+# Then run: wrangler kv:namespace create PASTE_METADATA --preview
+# Then update the IDs below with the values from the commands above
+
+[[kv_namespaces]]
+binding = "PASTE_METADATA"
+id = "0d25f4b9e61a44ab92634e7941cea0a0"
+preview_id = "0d25f4b9e61a44ab92634e7941cea0a0"
