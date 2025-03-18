@@ -104,6 +104,7 @@ program
   .command('keys')
   .description('Manage encryption keys for secure communication')
   .option('--interactive', 'Use interactive menu-driven mode for key management')
+  .option('--enhanced', 'Use enhanced interactive TUI mode with color and advanced features')
   .option('--list', 'List all your keys and friends\' keys with fingerprints')
   .option('--add-friend <name>', 'Add a friend\'s public key (requires --key-file)')
   .option('--key-file <path>', 'Path to key file for import/export operations')
@@ -111,16 +112,28 @@ program
   .option('--remove <name>', 'Remove a friend\'s key from your keyring')
   .option('--gen-key', 'Generate a new RSA key pair for encryption')
   .option('--my-key', 'Output your public key to the console for sharing')
+  .option('--diagnostics', 'Run diagnostics on your key configuration and show a report')
+  .option('--search <query>', 'Search for keys by name, email, or fingerprint')
+  .option('--details <id>', 'Show detailed information about a specific key')
+  .option('--backup <dir>', 'Backup all keys to the specified directory')
   // PGP options
   .option('--pgp-key <email-or-id>', 'Fetch and add a PGP key from a keyserver')
   .option('--pgp-name <name>', 'Custom name for the PGP key (optional)')
   .option('--import-pgp-key <path>', 'Import a PGP private key for encryption/decryption')
   .option('--pgp-passphrase <phrase>', 'Passphrase for PGP private key')
   .option('--native-pgp', 'Use native PGP encryption instead of converting to PEM')
+  .option('--from-gpg <key-id>', 'Import a key from your GPG keyring')
+  .option('--gpg-import <path>', 'Import a key to your GPG keyring')
   // Keybase options
   .option('--keybase <username>', 'Fetch and add a Keybase user\'s PGP key')
   .option('--keybase-name <name>', 'Custom name for the Keybase user\'s key (optional)')
   .option('--no-verify', 'Skip verification of Keybase proofs')
+  // Debugging and logging options
+  .option('--verbose', 'Enable verbose logging (same as --log-level debug)')
+  .option('--debug', 'Enable debug mode with extensive logging (same as --log-level trace)')
+  .option('--log-level <level>', 'Set logging level (error, warn, info, debug, trace)')
+  .option('--log-file <path>', 'Log to the specified file')
+  .option('--no-log-file', 'Disable logging to file')
   .addHelpText('after', `
 Examples:
   $ dedpaste keys --gen-key                               # Generate a new key pair
@@ -148,8 +161,47 @@ Key Storage:
 `)
   .action(async (options) => {
     try {
-      // Interactive mode
+      // Initialize logger based on options
+      let logLevel = 'info';
+      if (options.verbose) logLevel = 'debug';
+      if (options.debug) logLevel = 'trace';
+      if (options.logLevel) logLevel = options.logLevel;
+      
+      const logOptions = {
+        level: logLevel,
+        logToFile: options.logFile !== false,
+        logFile: options.logFile || 'dedpaste.log'
+      };
+      
+      // Import and initialize logger
+      const { initialize: initLogger } = await import('./logger.js');
+      const logger = await initLogger(logOptions);
+      
+      // Log the start of execution
+      logger.info('Starting key management operation', { options });
+      
+      // Enhanced interactive mode takes precedence
+      if (options.enhanced) {
+        logger.debug('Entering enhanced interactive mode');
+        const { enhancedKeyManagement } = await import('./enhancedInteractiveMode.js');
+        const result = await enhancedKeyManagement();
+        
+        if (!result.success) {
+          logger.error('Enhanced key management failed', { error: result.message });
+          console.error(`Error: ${result.message}`);
+          process.exit(1);
+        }
+        
+        if (result.message) {
+          console.log(result.message);
+        }
+        
+        return;
+      }
+      
+      // Regular interactive mode
       if (options.interactive) {
+        logger.debug('Entering interactive mode');
         const result = await interactiveKeyManagement();
         if (result.message) {
           console.log(result.message);
@@ -157,8 +209,276 @@ Key Storage:
         return;
       }
       
+      // Run diagnostics
+      if (options.diagnostics) {
+        logger.debug('Running key diagnostics');
+        const { runKeyDiagnostics, formatDiagnosticsReport } = await import('./keyDiagnostics.js');
+        
+        console.log('Running key system diagnostics... Please wait...');
+        const results = await runKeyDiagnostics();
+        const report = formatDiagnosticsReport(results);
+        
+        console.log(report);
+        
+        if (results.status !== 'ok') {
+          logger.warn('Diagnostics found issues', { 
+            errors: results.errors.length, 
+            warnings: results.warnings.length 
+          });
+          
+          // Suggest fixing issues
+          console.log('\nTo fix issues automatically, use:');
+          console.log('dedpaste keys --enhanced');
+          console.log('Then select "Run diagnostics" and follow the prompts.');
+        }
+        
+        return;
+      }
+      
+      // Search for keys
+      if (options.search) {
+        logger.debug('Searching for keys', { query: options.search });
+        
+        const { searchKeys } = await import('./unifiedKeyManager.js');
+        const keys = await searchKeys(options.search, { includeGpg: true });
+        
+        if (keys.length === 0) {
+          console.log(`No keys found matching "${options.search}"`);
+          return;
+        }
+        
+        console.log(`\nFound ${keys.length} keys matching "${options.search}":\n`);
+        
+        for (const key of keys) {
+          console.log(`- ${key.name} (${key.type.toUpperCase()})`);
+          
+          if (key.email) {
+            console.log(`  Email: ${key.email}`);
+          }
+          
+          if (key.username) {
+            console.log(`  Username: ${key.username}`);
+          }
+          
+          console.log(`  Fingerprint: ${key.fingerprint}`);
+          console.log(`  Source: ${key.source}`);
+          
+          if (key.created) {
+            console.log(`  Created: ${new Date(key.created).toLocaleString()}`);
+          }
+          
+          console.log('');
+        }
+        
+        return;
+      }
+      
+      // Show detailed key information
+      if (options.details) {
+        logger.debug('Showing key details', { keyId: options.details });
+        
+        const { getKeyById, readKeyContent } = await import('./unifiedKeyManager.js');
+        const keyInfo = await getKeyById(options.details, { includeGpg: true });
+        
+        if (!keyInfo) {
+          console.error(`Key "${options.details}" not found`);
+          process.exit(1);
+        }
+        
+        console.log(`\nKey details for "${keyInfo.name}":\n`);
+        console.log(`- ID: ${keyInfo.id}`);
+        console.log(`- Name: ${keyInfo.name}`);
+        console.log(`- Type: ${keyInfo.type.toUpperCase()}`);
+        console.log(`- Source: ${keyInfo.source}`);
+        console.log(`- Fingerprint: ${keyInfo.fingerprint}`);
+        
+        if (keyInfo.email) {
+          console.log(`- Email: ${keyInfo.email}`);
+        }
+        
+        if (keyInfo.username) {
+          console.log(`- Username: ${keyInfo.username}`);
+        }
+        
+        if (keyInfo.created) {
+          console.log(`- Created: ${new Date(keyInfo.created).toLocaleString()}`);
+        }
+        
+        if (keyInfo.lastUsed) {
+          console.log(`- Last Used: ${new Date(keyInfo.lastUsed).toLocaleString()}`);
+        }
+        
+        if (keyInfo.path) {
+          if (typeof keyInfo.path === 'object') {
+            console.log(`- Public Key Path: ${keyInfo.path.public}`);
+            console.log(`- Private Key Path: ${keyInfo.path.private}`);
+          } else {
+            console.log(`- Key Path: ${keyInfo.path}`);
+          }
+        }
+        
+        // Ask if user wants to see key content
+        if (keyInfo.source === 'self' || keyInfo.source === 'friend' || 
+            keyInfo.source === 'pgp' || keyInfo.source === 'keybase') {
+          
+          const { default: inquirer } = await import('inquirer');
+          
+          const { showContent } = await inquirer.prompt([{
+            type: 'confirm',
+            name: 'showContent',
+            message: 'Show key content?',
+            default: false
+          }]);
+          
+          if (showContent) {
+            // For self keys, ask if they want to see private key
+            let showPrivate = false;
+            if (keyInfo.source === 'self') {
+              const { viewPrivate } = await inquirer.prompt([{
+                type: 'confirm',
+                name: 'viewPrivate',
+                message: 'Show private key? (This is sensitive information)',
+                default: false
+              }]);
+              
+              showPrivate = viewPrivate;
+            }
+            
+            // Read the key content
+            const keyContent = await readKeyContent(keyInfo, { private: showPrivate });
+            
+            if (keyContent) {
+              console.log('\n--- Key Content ---\n');
+              console.log(keyContent);
+              console.log('\n-------------------\n');
+            } else {
+              console.error('Could not read key content');
+            }
+          }
+        }
+        
+        return;
+      }
+      
+      // Backup keys
+      if (options.backup) {
+        logger.debug('Backing up keys', { directory: options.backup });
+        
+        const backupDir = options.backup;
+        
+        // Create backup directory if it doesn't exist
+        await fsPromises.mkdir(backupDir, { recursive: true });
+        
+        // Get timestamp for backup files
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        
+        // Get all keys
+        const db = await loadKeyDatabase();
+        let backupCount = 0;
+        
+        // Backup self key if it exists
+        if (db.keys.self) {
+          const privateKeyDest = path.join(backupDir, `self-private-${timestamp}.pem`);
+          const publicKeyDest = path.join(backupDir, `self-public-${timestamp}.pem`);
+          
+          await fsPromises.copyFile(db.keys.self.private, privateKeyDest);
+          await fsPromises.copyFile(db.keys.self.public, publicKeyDest);
+          
+          backupCount += 2;
+          console.log(`Backed up self key to ${privateKeyDest} and ${publicKeyDest}`);
+        }
+        
+        // Backup friend keys
+        for (const [name, info] of Object.entries(db.keys.friends)) {
+          const friendKeyDest = path.join(backupDir, `friend-${name}-${timestamp}.pem`);
+          await fsPromises.copyFile(info.public, friendKeyDest);
+          backupCount++;
+          console.log(`Backed up friend key "${name}" to ${friendKeyDest}`);
+        }
+        
+        // Backup PGP keys
+        for (const [name, info] of Object.entries(db.keys.pgp || {})) {
+          const pgpKeyDest = path.join(backupDir, `pgp-${name}-${timestamp}.asc`);
+          await fsPromises.copyFile(info.path, pgpKeyDest);
+          backupCount++;
+          console.log(`Backed up PGP key "${name}" to ${pgpKeyDest}`);
+        }
+        
+        // Backup Keybase keys
+        for (const [name, info] of Object.entries(db.keys.keybase || {})) {
+          const keybaseKeyDest = path.join(backupDir, `keybase-${name}-${timestamp}.asc`);
+          await fsPromises.copyFile(info.path, keybaseKeyDest);
+          backupCount++;
+          console.log(`Backed up Keybase key "${name}" to ${keybaseKeyDest}`);
+        }
+        
+        // Backup key database
+        const dbDest = path.join(backupDir, `keydb-${timestamp}.json`);
+        await fsPromises.copyFile(path.join(homedir(), '.dedpaste', 'keydb.json'), dbDest);
+        console.log(`Backed up key database to ${dbDest}`);
+        
+        console.log(`\nBackup complete: ${backupCount} keys backed up to ${backupDir}`);
+        return;
+      }
+      
+      // Import a key from GPG keyring
+      if (options.fromGpg) {
+        logger.debug('Importing key from GPG keyring', { keyId: options.fromGpg });
+        
+        const { importKey } = await import('./unifiedKeyManager.js');
+        
+        const name = options.pgpName || options.fromGpg;
+        console.log(`Importing key ${options.fromGpg} from GPG keyring...`);
+        
+        const result = await importKey({
+          source: 'gpg-keyring',
+          keyId: options.fromGpg,
+          name: name
+        });
+        
+        if (result.success) {
+          console.log(`\n✓ Imported key from GPG keyring: ${result.name}`);
+          console.log(`  - Type: ${result.type}`);
+          console.log(`  - Fingerprint: ${result.fingerprint}`);
+          if (result.email) console.log(`  - Email: ${result.email}`);
+          console.log(`  - Stored at: ${result.path}`);
+        } else {
+          console.error(`Error importing key from GPG keyring: ${result.error}`);
+          process.exit(1);
+        }
+        
+        return;
+      }
+      
+      // Import a key to GPG keyring
+      if (options.gpgImport) {
+        logger.debug('Importing key to GPG keyring', { file: options.gpgImport });
+        
+        const { importKey } = await import('./unifiedKeyManager.js');
+        
+        console.log(`Importing key from ${options.gpgImport} to GPG keyring...`);
+        
+        const result = await importKey({
+          source: 'gpg-import',
+          file: options.gpgImport
+        });
+        
+        if (result.success) {
+          console.log(`\n✓ Key imported to GPG keyring successfully`);
+          console.log(`  - Key ID: ${result.keyId}`);
+          console.log('\nOutput from GPG:');
+          console.log(result.output);
+        } else {
+          console.error(`Error importing key to GPG keyring: ${result.error}`);
+          process.exit(1);
+        }
+        
+        return;
+      }
+      
       // List keys
       if (options.list) {
+        logger.debug('Listing all keys');
         await interactiveListKeys();
         return;
       }
@@ -170,11 +490,14 @@ Key Storage:
           process.exit(1);
         }
         
+        logger.debug('Adding friend key', { name: options.addFriend, file: options.keyFile });
+        
         try {
           const keyContent = await fsPromises.readFile(options.keyFile, 'utf8');
           const keyPath = await addFriendKey(options.addFriend, keyContent);
           console.log(`Added ${options.addFriend}'s public key at ${keyPath}`);
         } catch (error) {
+          logger.error('Failed to add friend key', { error: error.message });
           console.error(`Error adding friend's key: ${error.message}`);
           process.exit(1);
         }
@@ -183,6 +506,7 @@ Key Storage:
       
       // Export public key
       if (options.export) {
+        logger.debug('Exporting public key');
         const result = await interactiveExportKey();
         if (result.message) {
           console.log(result.message);
@@ -192,6 +516,8 @@ Key Storage:
       
       // Remove a key
       if (options.remove) {
+        logger.debug('Removing key', { name: options.remove });
+        
         try {
           // Try to remove from any collection
           const success = await removeKey('any', options.remove);
@@ -202,6 +528,7 @@ Key Storage:
             process.exit(1);
           }
         } catch (error) {
+          logger.error('Failed to remove key', { error: error.message });
           console.error(`Error removing key: ${error.message}`);
           process.exit(1);
         }
@@ -210,6 +537,8 @@ Key Storage:
       
       // Fetch and add a PGP key from keyservers
       if (options.pgpKey) {
+        logger.debug('Fetching PGP key', { identifier: options.pgpKey });
+        
         try {
           console.log(`Fetching PGP key for "${options.pgpKey}" from keyservers...`);
           const name = options.pgpName || options.pgpKey;
@@ -222,6 +551,7 @@ Key Storage:
   - Stored at: ${result.path}
 `);
         } catch (error) {
+          logger.error('Failed to fetch PGP key', { error: error.message });
           console.error(`Error fetching PGP key: ${error.message}`);
           process.exit(1);
         }
@@ -235,6 +565,8 @@ Key Storage:
           console.error('Error: --pgp-passphrase is required when importing a PGP private key');
           process.exit(1);
         }
+        
+        logger.debug('Importing PGP private key', { file: options.importPgpKey });
         
         try {
           // Read the PGP private key file
@@ -276,6 +608,7 @@ Key Storage:
   - Original PGP key: ${options.importPgpKey}
 `);
         } catch (error) {
+          logger.error('Failed to import PGP private key', { error: error.message });
           console.error(`Error importing PGP private key: ${error.message}`);
           process.exit(1);
         }
@@ -284,6 +617,8 @@ Key Storage:
       
       // Fetch and add a Keybase user's key
       if (options.keybase) {
+        logger.debug('Fetching Keybase key', { username: options.keybase });
+        
         try {
           console.log(`Fetching Keybase key for user "${options.keybase}"...`);
           
@@ -303,6 +638,7 @@ Key Storage:
   - Stored at: ${result.path}
 `);
         } catch (error) {
+          logger.error('Failed to fetch Keybase key', { error: error.message });
           console.error(`Error fetching Keybase key: ${error.message}`);
           process.exit(1);
         }
@@ -311,6 +647,8 @@ Key Storage:
       
       // Generate a new key pair
       if (options.genKey) {
+        logger.debug('Generating new key pair');
+        
         const { privateKeyPath, publicKeyPath } = await generateKeyPair();
         console.log(`
 ✓ Generated new key pair:
@@ -322,6 +660,8 @@ Key Storage:
       
       // Output public key to console
       if (options.myKey) {
+        logger.debug('Showing self public key');
+        
         const selfKey = await getKey('self');
         if (!selfKey) {
           console.error('No personal key found. Generate one with --gen-key first.');
@@ -336,6 +676,7 @@ Key Storage:
           console.log('----------------');
           console.log('\nShare this key with your friends so they can send you encrypted pastes.');
         } catch (error) {
+          logger.error('Failed to read public key', { error: error.message });
           console.error(`Error reading public key: ${error.message}`);
           process.exit(1);
         }
@@ -364,6 +705,7 @@ program
   .option('--key-file <path>', 'Path to public key for encryption (alternative to stored keys)')
   .option('--gen-key', 'Generate a new key pair for encryption if you don\'t have one')
   .option('--interactive', 'Use interactive mode with guided prompts for message creation')
+  .option('--enhanced', 'Use enhanced interactive mode with advanced key selection features')
   .option('--debug', 'Debug mode: show encrypted content without uploading')
   .option('-c, --copy', 'Copy the URL to clipboard automatically')
   // PGP options
@@ -376,12 +718,14 @@ Examples:
   $ echo "For Alice only" | dedpaste send --encrypt --for alice    # Encrypt for a friend
   $ dedpaste send --file secret.txt --encrypt --temp               # Encrypt a file as one-time paste
   $ dedpaste send --interactive --encrypt                          # Interactive encrypted message
+  $ dedpaste send --enhanced --encrypt                             # Enhanced interactive mode with full key support
   $ dedpaste send --list-friends                                   # List available recipients
   
 PGP Options:
   $ echo "Secret" | dedpaste send --encrypt --pgp                  # Use PGP encryption
   $ dedpaste send --encrypt --for alice@example.com --pgp          # Encrypt for PGP key
   $ dedpaste send --pgp-key-file friend.asc --encrypt --pgp        # Use specific PGP key file
+  $ dedpaste send --enhanced                                       # Use enhanced mode with GPG keyring support
   
 Encryption:
   - Standard encryption uses RSA for key exchange and AES-256-GCM for content
@@ -417,11 +761,30 @@ Encryption:
       
       // Interactive mode
       if (options.interactive) {
-        const result = await interactiveSend();
-        content = result.content;
-        recipientName = result.recipient;
-        options.temp = result.temp;
-        contentType = 'text/plain';
+        // Check if we should use the enhanced interactive mode
+        if (options.enhanced) {
+          console.log('Using enhanced interactive mode for sending...');
+          const { enhancedInteractiveSend } = await import('./enhancedInteractiveMode.js');
+          const result = await enhancedInteractiveSend();
+          
+          if (!result.success) {
+            console.error(`Error: ${result.message}`);
+            process.exit(1);
+          }
+          
+          content = result.content;
+          recipientName = result.recipient;
+          options.temp = result.temp;
+          options.pgp = result.pgp; // Use PGP flag from enhanced mode
+          contentType = 'text/plain';
+        } else {
+          // Use standard interactive mode
+          const result = await interactiveSend();
+          content = result.content;
+          recipientName = result.recipient;
+          options.temp = result.temp;
+          contentType = 'text/plain';
+        }
       } else {
         // Determine if we're reading from a file or stdin
         if (options.file) {
@@ -597,18 +960,23 @@ program
   .option('--pgp-passphrase <passphrase>', 'Passphrase for PGP private key')
   .option('--use-gpg-keyring', 'Try to decrypt PGP messages using the system GPG keyring', true)
   .option('--no-gpg-keyring', 'Disable automatic GPG keyring decryption')
+  .option('--show-metadata', 'Show detailed metadata about the encrypted message')
+  .option('--interactive', 'Use interactive mode for decryption (will prompt for passphrase)')
   .addHelpText('after', `
 Examples:
   $ dedpaste get https://paste.d3d.dev/AbCdEfGh        # Get a regular paste by URL
   $ dedpaste get AbCdEfGh                              # Get a regular paste by ID
   $ dedpaste get https://paste.d3d.dev/e/AbCdEfGh      # Get and decrypt an encrypted paste
   $ dedpaste get e/AbCdEfGh                            # Get and decrypt an encrypted paste by ID
+  $ dedpaste get e/AbCdEfGh --interactive              # Use interactive mode with password prompt
+  $ dedpaste get e/AbCdEfGh --show-metadata            # Show detailed metadata about the paste
   
 PGP Decryption:
   $ dedpaste get e/AbCdEfGh --pgp-key-file my.pgp      # Decrypt with PGP private key
   $ dedpaste get e/AbCdEfGh --pgp-key-file my.pgp --pgp-passphrase "secret"
   $ dedpaste get e/AbCdEfGh                            # Automatically try GPG keyring for PGP content
   $ dedpaste get e/AbCdEfGh --no-gpg-keyring           # Disable automatic GPG keyring usage
+  $ dedpaste get e/AbCdEfGh --interactive              # Interactive mode with passphrase prompt
   
 URL Format:
   - Regular pastes: https://paste.d3d.dev/{id}
@@ -634,8 +1002,9 @@ GPG Keyring Integration:
       let id = urlOrId;
       let isEncrypted = false;
       
-      // If it's a URL, extract the ID and check the path
+      // Parse the URL or ID
       if (urlOrId.startsWith('http')) {
+        // It's a URL
         const url = new URL(urlOrId);
         const path = url.pathname;
         
@@ -653,11 +1022,16 @@ GPG Keyring Integration:
             process.exit(1);
           }
         }
+      } else if (urlOrId.startsWith('e/') && urlOrId.length === 10) {
+        // It's an encrypted ID in the format "e/AbCdEfGh"
+        id = urlOrId.substring(2);
+        isEncrypted = true;
       } else if (id.length === 8) {
-        // It's just an ID, assume it's not encrypted
+        // It's just a regular ID
         isEncrypted = false;
       } else {
         console.error('Invalid paste ID format');
+        console.error('Valid formats: https://paste.d3d.dev/AbCdEfGh, AbCdEfGh, https://paste.d3d.dev/e/AbCdEfGh, e/AbCdEfGh');
         process.exit(1);
       }
       
@@ -666,6 +1040,8 @@ GPG Keyring Integration:
         ? `${API_URL}/e/${id}`
         : `${API_URL}/${id}`;
       
+      console.log(`Fetching paste from ${fetchUrl}...`);
+      
       // Fetch the paste
       const response = await fetch(fetchUrl);
       
@@ -673,6 +1049,14 @@ GPG Keyring Integration:
         console.error(`Error: ${response.status} ${response.statusText}`);
         const errorText = await response.text();
         console.error(errorText);
+        
+        // Provide more helpful error messages
+        if (response.status === 404) {
+          console.error('The paste was not found. It may have been deleted or expired.');
+        } else if (response.status === 429) {
+          console.error('Too many requests. Please try again later.');
+        }
+        
         process.exit(1);
       }
       
@@ -682,7 +1066,7 @@ GPG Keyring Integration:
       
       // If it's encrypted, decrypt it
       if (isEncrypted) {
-        console.log('⚠️  This paste is encrypted');
+        console.log('🔒 This paste is encrypted');
         
         try {
           let result;
@@ -690,71 +1074,223 @@ GPG Keyring Integration:
           // Determine whether to use GPG keyring
           const useGpgKeyring = options.useGpgKeyring !== false;
           
-          // Check if PGP key file is provided
-          if (options.pgpKeyFile) {
-            // Use PGP decryption with specified key
-            console.log('Using PGP decryption with provided key file');
+          // Check if we're in interactive mode
+          if (options.interactive) {
+            console.log('Using interactive mode for decryption...');
             
-            // Check for passphrase
-            if (!options.pgpPassphrase) {
-              console.error('Error: --pgp-passphrase is required when using --pgp-key-file');
-              process.exit(1);
+            // Import the inquirer module
+            const inquirer = await import('inquirer');
+            
+            // Check if PGP key file is provided or should be prompted
+            let pgpKeyFile = options.pgpKeyFile;
+            let passphrase = options.pgpPassphrase;
+            
+            // If no key file is provided but we're in interactive mode, ask if user wants to use one
+            if (!pgpKeyFile) {
+              const { usePgpKey } = await inquirer.default.prompt([{
+                type: 'confirm',
+                name: 'usePgpKey',
+                message: 'Do you want to use a PGP private key file for decryption?',
+                default: false
+              }]);
+              
+              if (usePgpKey) {
+                const { keyFile } = await inquirer.default.prompt([{
+                  type: 'input',
+                  name: 'keyFile',
+                  message: 'Enter the path to your PGP private key file:',
+                  validate: (input) => {
+                    if (!input) return 'Path cannot be empty';
+                    if (!fs.existsSync(input)) return 'File does not exist';
+                    return true;
+                  }
+                }]);
+                
+                pgpKeyFile = keyFile;
+              }
             }
             
-            // Decrypt with PGP, with GPG keyring as fallback if enabled
-            result = await decryptContent(contentBuffer, options.pgpKeyFile, options.pgpPassphrase, useGpgKeyring);
+            // If we're using a PGP key file and don't have a passphrase, prompt for it
+            if (pgpKeyFile && !passphrase) {
+              const { keyPassphrase } = await inquirer.default.prompt([{
+                type: 'password',
+                name: 'keyPassphrase',
+                message: 'Enter the passphrase for your PGP private key:',
+                mask: '*'
+              }]);
+              
+              passphrase = keyPassphrase;
+            }
+            
+            // Now we have all the information needed for decryption
+            result = await decryptContent(contentBuffer, pgpKeyFile, passphrase, useGpgKeyring);
           } else {
-            // Use standard decryption, with GPG keyring for PGP content if enabled
-            if (useGpgKeyring) {
-              console.log('GPG keyring integration is enabled for PGP content');
-            }
+            // Non-interactive mode
             
-            result = await decryptContent(contentBuffer, null, null, useGpgKeyring);
+            // Check if PGP key file is provided
+            if (options.pgpKeyFile) {
+              // Use PGP decryption with specified key
+              console.log('Using PGP decryption with provided key file');
+              
+              // Check for passphrase
+              if (!options.pgpPassphrase) {
+                console.error('Error: --pgp-passphrase is required when using --pgp-key-file in non-interactive mode');
+                console.error('Tip: Use --interactive to be prompted for the passphrase');
+                process.exit(1);
+              }
+              
+              // Decrypt with PGP, with GPG keyring as fallback if enabled
+              result = await decryptContent(contentBuffer, options.pgpKeyFile, options.pgpPassphrase, useGpgKeyring);
+            } else {
+              // Use standard decryption, with GPG keyring for PGP content if enabled
+              if (useGpgKeyring) {
+                console.log('GPG keyring integration is enabled for PGP content');
+              }
+              
+              result = await decryptContent(contentBuffer, null, null, useGpgKeyring);
+            }
           }
           
           // Display metadata if available
           if (result.metadata) {
-            // Handle version 2 (standard RSA/AES encryption)
-            if (result.metadata.version === 2) {
-              if (result.metadata.sender && result.metadata.sender !== 'self') {
+            if (options.showMetadata) {
+              // Show full metadata in a more structured format
+              console.log('\n✨ Paste Metadata:');
+              console.log('----------------');
+              
+              // Version info
+              console.log(`Format Version: ${result.metadata.version || 'Unknown'}`);
+              
+              // Decryption method
+              if (result.metadata.decryptedWith) {
+                console.log(`Decrypted With: ${result.metadata.decryptedWith}`);
+              }
+              
+              // Sender info
+              if (result.metadata.sender) {
                 console.log(`Sender: ${result.metadata.sender}`);
               }
               
+              // Recipient info
+              if (result.metadata.recipient) {
+                console.log('\nRecipient Info:');
+                const recipient = result.metadata.recipient;
+                
+                if (recipient.name) console.log(`- Name: ${recipient.name}`);
+                if (recipient.email) console.log(`- Email: ${recipient.email}`);
+                if (recipient.keyId) console.log(`- Key ID: ${recipient.keyId}`);
+                if (recipient.fingerprint) console.log(`- Fingerprint: ${recipient.fingerprint}`);
+                if (recipient.type) console.log(`- Key Type: ${recipient.type}`);
+              }
+              
+              // Timestamp
               if (result.metadata.timestamp) {
-                console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
-              }
-            } 
-            // Handle PGP-specific format (version 3)
-            else if (result.metadata.pgp) {
-              console.log(`PGP encrypted message`);
-              
-              if (result.metadata.recipient && result.metadata.recipient.name) {
-                console.log(`Recipient: ${result.metadata.recipient.name}`);
+                console.log(`\nCreated: ${new Date(result.metadata.timestamp).toLocaleString()}`);
               }
               
-              if (result.metadata.recipient && result.metadata.recipient.email) {
-                console.log(`Email: ${result.metadata.recipient.email}`);
+              // PGP-specific info
+              if (result.metadata.pgp) {
+                console.log('\nPGP-Specific Information:');
+                console.log('- Message uses OpenPGP encryption');
+                
+                if (result.metadata.keyId) {
+                  console.log(`- Decryption Key ID: ${result.metadata.keyId}`);
+                }
               }
               
-              if (result.metadata.recipient && result.metadata.recipient.keyId) {
-                console.log(`Key ID: ${result.metadata.recipient.keyId}`);
+              // Signature info if available
+              if (result.metadata.signature) {
+                console.log('\nSignature Information:');
+                const sig = result.metadata.signature;
+                
+                if (sig.valid === true) {
+                  console.log('- ✓ Valid signature');
+                } else if (sig.valid === null) {
+                  console.log('- ? Unverified signature');
+                } else {
+                  console.log('- ✗ Invalid signature');
+                }
+                
+                if (sig.keyId) console.log(`- Signed by key ID: ${sig.keyId}`);
+                if (sig.created) console.log(`- Signed on: ${new Date(sig.created).toLocaleString()}`);
               }
               
-              if (result.metadata.timestamp) {
-                console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
+              console.log('----------------\n');
+            } else {
+              // Show just the basic info
+              // Handle version 2 (standard RSA/AES encryption)
+              if (result.metadata.version === 2) {
+                if (result.metadata.sender && result.metadata.sender !== 'self') {
+                  console.log(`Sender: ${result.metadata.sender}`);
+                }
+                
+                if (result.metadata.timestamp) {
+                  console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
+                }
+              } 
+              // Handle PGP-specific format (version 3)
+              else if (result.metadata.pgp) {
+                console.log(`PGP encrypted message`);
+                
+                if (result.metadata.recipient && result.metadata.recipient.name) {
+                  console.log(`Recipient: ${result.metadata.recipient.name}`);
+                }
+                
+                if (result.metadata.recipient && result.metadata.recipient.email) {
+                  console.log(`Email: ${result.metadata.recipient.email}`);
+                }
+                
+                if (result.metadata.recipient && result.metadata.recipient.keyId) {
+                  console.log(`Key ID: ${result.metadata.recipient.keyId}`);
+                }
+                
+                if (result.metadata.timestamp) {
+                  console.log(`Created: ${new Date(result.metadata.timestamp).toLocaleString()}`);
+                }
               }
             }
           }
           
           console.log('\n✓ Paste decrypted successfully:\n');
           process.stdout.write(result.content);
+          
+          // Add a newline at the end if the content doesn't end with one
+          if (result.content.length > 0 && result.content[result.content.length - 1] !== 10) { // ASCII 10 is newline
+            process.stdout.write(Buffer.from('\n'));
+          }
         } catch (error) {
-          console.error(`Decryption error: ${error.message}`);
+          console.error(`\n❌ Decryption error: ${error.message}`);
+          
+          // Provide more useful suggestions based on the error type
+          if (error.message.includes('No personal key found')) {
+            console.error('\nTip: You need to generate a key pair first. Run:');
+            console.error('  dedpaste keys --gen-key');
+          } else if (error.message.includes('passphrase')) {
+            console.error('\nTip: Try using --interactive mode to be prompted for the passphrase');
+          } else if (error.message.includes('not a PGP')) {
+            console.error('\nTip: This paste appears to use standard RSA/AES encryption, not PGP');
+          } else if (error.message.includes('GPG keyring')) {
+            console.error('\nTip: Make sure GPG is installed and you have the required private key');
+            // Check if we have keyId information to help the user
+            if (error.keyIds && error.keyIds.length > 0) {
+              console.error('\nThis message was encrypted for:');
+              error.keyIds.forEach(key => {
+                console.error(`- ${key.type} key ID: ${key.id}`);
+              });
+              console.error('\nYou need one of these keys in your GPG keyring to decrypt this message');
+            }
+          }
+          
           process.exit(1);
         }
       } else {
         // Just output the content
         process.stdout.write(contentBuffer);
+        
+        // Add a newline at the end if the content doesn't end with one
+        if (contentBuffer.length > 0 && contentBuffer[contentBuffer.length - 1] !== 10) { // ASCII 10 is newline
+          process.stdout.write(Buffer.from('\n'));
+        }
       }
     } catch (error) {
       console.error('Error:', error.message);
@@ -770,13 +1306,19 @@ program
   .option('-o, --output', 'Print only the URL (without any additional text)')
   .option('-e, --encrypt', 'Encrypt the content before uploading (requires key setup)')
   .option('-c, --copy', 'Copy the URL to clipboard automatically')
+  .option('--interactive', 'Use interactive mode with guided prompts for message creation')
+  .option('--enhanced', 'Use enhanced interactive mode with advanced key selection features')
+  .option('--pgp', 'Use PGP encryption instead of hybrid RSA/AES')
   .addHelpText('after', `
 Default Command Examples:
   $ echo "Hello, world!" | dedpaste                    # Create a basic paste
   $ dedpaste --file document.txt                       # Upload a file
   $ echo "Secret data" | dedpaste --encrypt            # Create an encrypted paste
+  $ echo "Secret data" | dedpaste --encrypt --pgp      # Create a PGP-encrypted paste
   $ dedpaste --file image.jpg --type image/jpeg        # Upload with specific content type
   $ echo "One-time message" | dedpaste --temp          # Create a one-time paste
+  $ dedpaste --interactive --encrypt                   # Interactive encrypted message creation
+  $ dedpaste --enhanced --encrypt                      # Enhanced interactive mode with GPG support
   
 For more advanced options, use the subcommands:
   $ dedpaste keys --help                               # Key management options
@@ -797,12 +1339,33 @@ program
       let content;
       let contentType;
       
-      // Determine if we're reading from a file or stdin
-      if (options.file) {
-        // Read from the specified file
-        if (!fs.existsSync(options.file)) {
-          console.error(`Error: File '${options.file}' does not exist`);
+      // Check if we should use enhanced interactive mode
+      if (options.interactive && options.enhanced) {
+        console.log('Using enhanced interactive mode...');
+        try {
+          const { enhancedInteractiveSend } = await import('./enhancedInteractiveMode.js');
+          const result = await enhancedInteractiveSend();
+          
+          if (!result.success) {
+            console.error(`Error: ${result.message}`);
+            process.exit(1);
+          }
+          
+          content = result.content;
+          options.temp = result.temp;
+          options.pgp = result.pgp;
+          contentType = 'text/plain';
+        } catch (error) {
+          console.error(`Error in enhanced interactive mode: ${error.message}`);
           process.exit(1);
+        }
+      } else {
+        // Regular flow - determine if we're reading from a file or stdin
+        if (options.file) {
+          // Read from the specified file
+          if (!fs.existsSync(options.file)) {
+            console.error(`Error: File '${options.file}' does not exist`);
+            process.exit(1);
         }
         
         content = fs.readFileSync(options.file);

@@ -11,7 +11,10 @@ A simple pastebin CLI application powered by Cloudflare Workers and R2 storage.
 - Support for RSA key pairs (PEM format)
 - Friend-to-friend encryption with key management
 - PGP keyserver integration for adding public keys
+- GPG keyring integration for using system keys
+- Interactive PGP passphrase support and secure file handling
 - Keybase user integration with proof verification
+- Advanced interactive mode with rich PGP and GPG support
 - Command-line interface for easy integration with scripts and tools
 - Dark mode web interface for better readability
 
@@ -245,6 +248,33 @@ dedpaste send --interactive --encrypt
 # - Entering your message in a text editor
 # - Selecting a recipient (yourself or a friend)
 # - Choosing whether to create a one-time paste
+
+# Enhanced interactive mode for key management
+dedpaste keys --enhanced
+# This opens a TUI with advanced options:
+# - Search and list keys (including GPG keys)
+# - Add or import keys from multiple sources
+# - Generate new keys
+# - View detailed key information
+# - Export keys
+# - Remove keys
+# - Run key diagnostics
+
+# Enhanced interactive mode for sending
+dedpaste send --enhanced --encrypt
+# This provides a richer experience:
+# - Categorized key selection (Self, Friends, PGP, Keybase, GPG)
+# - Direct GPG keyring access
+# - Support for PGP encryption
+# - One-time paste options
+# - Interactive message editing
+
+# Interactive mode for receiving with passphrase prompts
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --interactive
+# This provides:
+# - Prompts for PGP key selection if needed
+# - Secure passphrase entry
+# - Better error handling with helpful suggestions
 ```
 
 ### API Usage
@@ -612,12 +642,40 @@ dedpaste get https://paste.d3d.dev/e/AbCdEfGh
 
 # Decrypt with a specific PGP private key
 dedpaste get https://paste.d3d.dev/e/AbCdEfGh --pgp-key-file path/to/private.pgp --pgp-passphrase "passphrase"
+
+# Use interactive mode to be prompted for the passphrase
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --interactive
+
+# Show detailed metadata about the encrypted message
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --show-metadata
 ```
 
 When a paste is encrypted with native PGP:
 - The CLI automatically detects the encryption format
 - It displays metadata about the recipient and key ID
 - It securely handles passphrase entry and decryption
+
+#### GPG Keyring Integration
+
+DedPaste supports direct integration with your system's GPG keyring:
+
+```bash
+# Decrypt using your GPG keyring (enabled by default)
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh
+
+# Explicitly disable GPG keyring integration
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh --no-gpg-keyring
+
+# Use enhanced interactive mode for sending with GPG selection
+dedpaste send --enhanced --encrypt
+```
+
+GPG keyring integration provides several benefits:
+- Use your existing GPG keys without exporting/importing
+- Leverage GPG's secure key management
+- Access to smart cards and hardware security modules
+- Automatic key selection for decryption
+- Integration with your system's passphrase management
 
 ### Using Keybase Integration
 
