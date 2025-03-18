@@ -8,7 +8,7 @@ import { homedir } from 'os';
 
 // Import our unified key manager
 import * as unifiedKeyManager from './unifiedKeyManager.js';
-import { runKeyDiagnostics, formatDiagnosticsReport } from './keyDiagnostics.js';
+import { runKeyDiagnostics, formatDiagnosticsReport, checkGpgKeyring } from './keyDiagnostics.js';
 import { encryptContent, decryptContent } from './encryptionUtils.js';
 
 /**
@@ -17,15 +17,22 @@ import { encryptContent, decryptContent } from './encryptionUtils.js';
  */
 async function enhancedKeyManagement() {
   try {
+    // Display welcome message
+    console.log(chalk.bold.blue('\n===== DedPaste Enhanced Key Management =====\n'));
+    console.log(chalk.cyan('Initializing key system... Please wait...\n'));
+
     // Initialize the key manager
     const init = await unifiedKeyManager.initialize();
     
     if (!init.success) {
+      console.error(chalk.red(`Failed to initialize key system: ${init.error}`));
       return {
         success: false,
         message: `Failed to initialize key system: ${init.error}`
       };
     }
+    
+    console.log(chalk.green('✓ Key system initialized successfully!\n'));
     
     // Main menu loop
     let exitMenu = false;
@@ -76,11 +83,14 @@ async function enhancedKeyManagement() {
       }
     }
     
+    console.log(chalk.blue('\nThank you for using DedPaste Key Management!\n'));
+    
     return {
       success: true,
       message: 'Key management session completed'
     };
   } catch (error) {
+    console.error(chalk.red(`\nError in key management: ${error.message}`));
     return {
       success: false,
       message: `Error in key management: ${error.message}`

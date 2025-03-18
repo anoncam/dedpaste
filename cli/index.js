@@ -10,6 +10,7 @@ import { createRequire } from 'module';
 import { promises as fsPromises } from 'fs';
 import { homedir } from 'os';
 import inquirer from 'inquirer';
+import chalk from 'chalk';
 // Import clipboardy with error handling
 let clipboard;
 try {
@@ -183,20 +184,45 @@ Key Storage:
       // Enhanced interactive mode takes precedence
       if (options.enhanced) {
         logger.debug('Entering enhanced interactive mode');
-        const { enhancedKeyManagement } = await import('./enhancedInteractiveMode.js');
-        const result = await enhancedKeyManagement();
         
-        if (!result.success) {
-          logger.error('Enhanced key management failed', { error: result.message });
-          console.error(`Error: ${result.message}`);
-          process.exit(1);
+        console.log(chalk.yellow('The enhanced interactive mode is now available as a separate command:'));
+        console.log(chalk.green('\ndedpaste-enhanced\n'));
+        console.log(chalk.yellow('This provides a better experience with interactive prompts.'));
+        console.log(chalk.yellow('You can also run it with:'));
+        console.log(chalk.green('\nnode cli-enhanced-mode.js\n'));
+        
+        // Still try to run it if they want to use the original command
+        const { confirm } = await inquirer.prompt([{
+          type: 'confirm',
+          name: 'confirm',
+          message: 'Would you like to continue with the enhanced mode anyway?',
+          default: true
+        }]);
+        
+        if (confirm) {
+          try {
+            // Direct execution of the enhanced mode
+            const { enhancedKeyManagement } = await import('./enhancedInteractiveMode.js');
+            const result = await enhancedKeyManagement();
+            
+            if (!result.success) {
+              logger.error('Enhanced key management failed', { error: result.message });
+              console.error(`Error: ${result.message}`);
+              process.exit(1);
+            }
+            
+            logger.info('Enhanced key management completed successfully');
+            return;
+          } catch (error) {
+            logger.error('Failed to run enhanced interactive mode', { error: error.message });
+            console.error(`Error: ${error.message}`);
+            console.error('Try using the standalone command: dedpaste-enhanced');
+            process.exit(1);
+          }
+        } else {
+          console.log(chalk.blue('Operation cancelled'));
+          return;
         }
-        
-        if (result.message) {
-          console.log(result.message);
-        }
-        
-        return;
       }
       
       // Regular interactive mode

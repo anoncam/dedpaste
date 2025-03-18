@@ -18,13 +18,15 @@
     "version": "git add -A ."
   },
   "bin": {
-    "dedpaste": "./cli/index.js"
+    "dedpaste": "./cli/index.js",
+    "dedpaste-enhanced": "./cli-enhanced-mode.js"
   },
   "files": [
     "dist",
     "cli",
     "completion",
     "public",
+    "cli-enhanced-mode.js",
     "README.md"
   ],
   "keywords": [
