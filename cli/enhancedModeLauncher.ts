@@ -49,19 +49,14 @@ async function runEnhancedMode() {
       throw new Error('enhancedKeyManagement is not a function');
     }
     
-    // Execute with a timeout to prevent hanging
+    // Execute the function without a timeout to prevent users from being
+    // kicked out in the middle of key operations
     debugLog('Executing enhancedKeyManagement function');
     
     let result;
     try {
-      // Set a timeout for the execution
-      const executionTimeout = setTimeout(() => {
-        throw new Error('Operation timed out after 120 seconds');
-      }, 120000);
-      
-      // Execute the function
+      // Execute the function without timeout
       result = await enhancedKeyManagement();
-      clearTimeout(executionTimeout);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       throw new Error(`Failed to execute enhancedKeyManagement: ${errorMessage}`);
