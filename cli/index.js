@@ -864,6 +864,11 @@ Encryption:
   - Use --debug to test encryption without uploading
 `)
   .action(async (options) => {
+    // Ensure temp flag is properly set by checking command line arguments
+    if (!options.temp && (process.argv.includes('--temp') || process.argv.includes('-t'))) {
+      options.temp = true;
+    }
+    
     try {
       // List friends if requested
       if (options.listFriends) {
