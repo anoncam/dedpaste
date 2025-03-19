@@ -237,6 +237,26 @@ describe('Encryption Functionality', () => {
       // 3. That the generated keys are in the correct PEM format
     });
   });
+
+  describe('Temporary Paste Integration Tests', () => {
+    // Note: These tests are not directly runnable as unit tests
+    // They're documented here as integration test examples that should be performed manually
+    
+    it('should correctly handle encrypted temporary pastes', () => {
+      // Integration test steps to manually verify:
+      // 1. Create an encrypted temporary paste:
+      //    echo "Secret temp content" | dedpaste --encrypt --temp
+      // 2. Attempt to view the paste (first view):
+      //    dedpaste get <paste-url>
+      // 3. Verify it can be decrypted successfully
+      // 4. Attempt to view the paste again (second view):
+      //    dedpaste get <paste-url>
+      // 5. Verify it returns 404 Not Found, confirming one-time paste functionality
+      
+      // This is a manual test as it requires actual server interaction
+      console.log('Manual integration test: temporary encrypted pastes should be deleted after first view');
+    });
+  });
 });
 
 // Note: In a real implementation, you would also add integration tests that:
