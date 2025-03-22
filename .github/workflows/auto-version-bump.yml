@@ -145,10 +145,10 @@ jobs:
       - name: Output summary
         run: |
           echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }} (${{ steps.check-label.outputs.bump_type }} bump)"
-          echo "🚀 The release workflow will be triggered automatically by this change."
+          echo "🚀 The release-with-sbom workflow will be triggered automatically by this change."
       
       # Note: We won't use repository-dispatch as it requires a PAT
-      # The workflow_run trigger in release.yml should handle this automatically
+      # The workflow_run trigger in release-with-sbom.yml should handle this automatically
       # If you need repository-dispatch in the future, use a PAT:
       # - name: Trigger release workflow
       #   uses: peter-evans/repository-dispatch@v2

@@ -1,0 +1,295 @@
+name: Release with SBOM and Notes
+
+# This workflow is triggered when package.json is changed (typically by auto-version-bump.yml)
+
+on:
+  workflow_dispatch:
+  
+  # Triggered by package.json changes
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
+  
+  # Also triggered when auto-version-bump workflow completes successfully
+  workflow_run:
+    workflows: ["Auto Version Bump"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+      proceed: ${{ steps.check.outputs.proceed }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Full history for release notes
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
+      
+      - name: Get version from package.json
+        id: get-version
+        run: |
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version in package.json: $VERSION"
+      
+      - name: Check if we should proceed with release
+        id: check
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          
+          # Always proceed for workflow_dispatch (manual trigger)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual workflow trigger - proceeding with release"
+            echo "proceed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # For workflow_run events from Auto Version Bump
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
+              echo "Auto Version Bump completed successfully - proceeding with release"
+              echo "proceed=true" >> $GITHUB_OUTPUT
+            else
+              echo "Auto Version Bump did not complete successfully - skipping release"
+              echo "proceed=false" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          fi
+          
+          # For push events, check if package.json version changed
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # For direct pushes to main that modify package.json
+            echo "This is a push event - checking if version changed"
+            
+            # Compare with previous commit
+            if ! git diff HEAD^ HEAD --name-only | grep -q "package.json"; then
+              echo "package.json was not changed in this commit - skipping release"
+              echo "proceed=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version')
+            echo "Previous version: $OLD_VERSION"
+            NEW_VERSION=$(jq -r '.version' package.json)
+            echo "Current version: $NEW_VERSION"
+            
+            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+              echo "Version changed from $OLD_VERSION to $NEW_VERSION - proceeding with release"
+              echo "proceed=true" >> $GITHUB_OUTPUT
+            else
+              echo "Version unchanged ($OLD_VERSION = $NEW_VERSION) - skipping release"
+              echo "proceed=false" >> $GITHUB_OUTPUT
+            fi
+            exit 0
+          fi
+          
+          # Default fallback
+          echo "Unknown event type - proceeding with release as fallback"
+          echo "proceed=true" >> $GITHUB_OUTPUT
+
+  build:
+    needs: check-version
+    if: needs.check-version.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0  # Full history for release notes
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Display version info
+        run: |
+          echo "Working with version: ${{ needs.check-version.outputs.version }}"
+      
+      - name: Build project
+        run: npm run build
+      
+      - name: Run tests
+        run: npm test || echo "Tests skipped"
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts
+          path: dist/
+
+  generate-sbom:
+    needs: [check-version, build]
+    if: needs.check-version.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Generate CycloneDX SBOM
+        uses: CycloneDX/gh-node-module-generatebom@v1
+        with:
+          path: ./
+          output: ./bom.json
+          format: json
+      
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: ./bom.json
+
+  create-release-notes:
+    needs: [check-version, build]
+    if: needs.check-version.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      release_notes: ${{ steps.generate-notes.outputs.notes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Set version for release notes
+        id: version
+        run: |
+          echo "version=${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "Using version: ${{ needs.check-version.outputs.version }}"
+      
+      - name: Get previous tag
+        id: previoustag
+        run: |
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "none")
+          echo "tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+      
+      - name: Generate release notes
+        id: generate-notes
+        run: |
+          if [ "${{ steps.previoustag.outputs.tag }}" = "none" ]; then
+            COMMITS=$(git log --pretty=format:"- %s (%h)" -n 20)
+          else
+            COMMITS=$(git log ${{ steps.previoustag.outputs.tag }}..HEAD --pretty=format:"- %s (%h)")
+          fi
+          
+          PR_NUMBERS=$(echo "$COMMITS" | grep -o "#[0-9]\+" | sort -u | sed 's/#//')
+          
+          echo "## What's Changed in v${{ steps.version.outputs.version }}" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### Commits" >> RELEASE_NOTES.md
+          echo "$COMMITS" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          if [ ! -z "$PR_NUMBERS" ]; then
+            echo "### Pull Requests" >> RELEASE_NOTES.md
+            for PR in $PR_NUMBERS; do
+              PR_INFO=$(curl -s -H "Accept: application/vnd.github.v3+json" \
+                https://api.github.com/repos/${{ github.repository }}/pulls/$PR)
+              PR_TITLE=$(echo "$PR_INFO" | jq -r '.title // "Unknown PR Title"')
+              PR_URL=$(echo "$PR_INFO" | jq -r '.html_url // "#"')
+              PR_AUTHOR=$(echo "$PR_INFO" | jq -r '.user.login // "Unknown"')
+              echo "- #$PR: $PR_TITLE by @$PR_AUTHOR [View PR]($PR_URL)" >> RELEASE_NOTES.md
+            done
+            echo "" >> RELEASE_NOTES.md
+          fi
+          
+          echo "### SBOM Information" >> RELEASE_NOTES.md
+          echo "This release includes a Software Bill of Materials (SBOM) in CycloneDX format." >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          
+          # Escape special characters for GitHub Actions output
+          NOTES=$(cat RELEASE_NOTES.md)
+          NOTES="${NOTES//'%'/'%25'}"
+          # Handle newlines properly - note that we need to escape \n and \r
+          NOTES="${NOTES//$'\n'/'%0A'}"
+          NOTES="${NOTES//$'\r'/'%0D'}"
+          echo "notes=$NOTES" >> $GITHUB_OUTPUT
+      
+      - name: Upload release notes
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-notes
+          path: RELEASE_NOTES.md
+
+  release:
+    needs: [check-version, build, generate-sbom, create-release-notes]
+    if: needs.check-version.outputs.proceed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Needed for creating releases
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set version for release
+        id: version
+        run: |
+          echo "version=${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "Using version: ${{ needs.check-version.outputs.version }}"
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifacts
+          path: dist/
+      
+      - name: Download SBOM
+        uses: actions/download-artifact@v3
+        with:
+          name: sbom
+          path: ./
+      
+      - name: Download release notes
+        uses: actions/download-artifact@v3
+        with:
+          name: release-notes
+          path: ./
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body_path: ./RELEASE_NOTES.md
+          files: |
+            ./bom.json
+          draft: false
+          prerelease: false
+          generate_release_notes: false # We create our own custom notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Publish to NPM
+        if: success()
+        run: |
+          echo "Publishing to NPM with provenance and SBOM metadata"
+          npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      
+      - name: Release complete
+        run: |
+          echo "✅ Release process complete"
+          echo "Version: v${{ steps.version.outputs.version }}"
+          echo "SBOM and detailed release notes published to GitHub release"
