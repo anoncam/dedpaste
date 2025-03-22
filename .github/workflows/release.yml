@@ -1,24 +1,31 @@
 name: Release to NPM
 
 on:
+  # This is the key trigger - when package.json is changed on main
   push:
     branches:
       - main
     paths:
       - 'package.json'
+  
+  # This is a backup trigger - when Auto Version Bump workflow completes
   workflow_run:
     workflows: ["Auto Version Bump"]
     types:
       - completed
     branches:
       - main
-  repository_dispatch:
-    types: [version-bumped]
+      
+  # Manual trigger for testing and emergency releases
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (leave empty to use current version in package.json)'
+        required: false
 
 jobs:
   check-version:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'repository_dispatch'
     permissions:
       contents: read
     outputs:
@@ -55,6 +62,16 @@ jobs:
             
             OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version')
             echo "Previous version from HEAD^: $OLD_VERSION"
+            
+            # Compare versions for push events
+            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
+              echo "Version changed from $OLD_VERSION to $NEW_VERSION"
+              echo "version_changed=true" >> $GITHUB_OUTPUT
+              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            else
+              echo "Version unchanged ($OLD_VERSION == $NEW_VERSION)"
+              echo "version_changed=false" >> $GITHUB_OUTPUT
+            fi
           
           elif [ "${{ github.event_name }}" = "workflow_run" ]; then
             # For workflow_run events triggered by Auto Version Bump, assume there was a version change
@@ -71,43 +88,34 @@ jobs:
             echo "version_changed=true" >> $GITHUB_OUTPUT
             echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
             echo "Version will be published: $NEW_VERSION"
-            exit 0
+          
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # For manually triggered workflow
+            echo "This is a workflow_dispatch event"
             
-          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            # For repository_dispatch events with version-bumped type
-            echo "This is a repository_dispatch event with version-bumped type"
-            
-            # Use the version from the client payload if available
-            if [ -n "${{ github.event.client_payload.version }}" ]; then
-              CLIENT_VERSION="${{ github.event.client_payload.version }}"
-              echo "Version from client payload: $CLIENT_VERSION"
+            # Check if a version was specified in the input
+            if [ -n "${{ github.event.inputs.version }}" ]; then
+              INPUT_VERSION="${{ github.event.inputs.version }}"
+              echo "Version from workflow input: $INPUT_VERSION"
               
-              # Set outputs using client payload version
               echo "version_changed=true" >> $GITHUB_OUTPUT
-              echo "new_version=$CLIENT_VERSION" >> $GITHUB_OUTPUT
-              echo "Version will be published: $CLIENT_VERSION"
+              echo "new_version=$INPUT_VERSION" >> $GITHUB_OUTPUT
+              echo "Version will be published: $INPUT_VERSION"
             else
-              # Fallback to version in package.json
-              echo "Client payload version not found, using package.json version"
+              # Use the version from package.json
+              echo "No version specified in input, using version from package.json"
               echo "version_changed=true" >> $GITHUB_OUTPUT
               echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
               echo "Version will be published: $NEW_VERSION"
             fi
-            exit 0
-          else
-            echo "Unknown event type - cannot determine version change"
-            echo "version_changed=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
           
-          # Compare versions for push events
-          if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-            echo "Version changed from $OLD_VERSION to $NEW_VERSION"
+          else
+            # Fallback for any other event types
+            echo "Event type: ${{ github.event_name }}"
+            echo "Using version from package.json"
             echo "version_changed=true" >> $GITHUB_OUTPUT
             echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          else
-            echo "Version unchanged ($OLD_VERSION == $NEW_VERSION)"
-            echo "version_changed=false" >> $GITHUB_OUTPUT
+            echo "Version will be published: $NEW_VERSION"
           fi
 
   generate-sbom:
