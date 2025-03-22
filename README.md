@@ -16,6 +16,7 @@ A secure pastebin CLI application powered by Cloudflare Workers and R2 storage w
 - Advanced interactive mode with rich PGP and GPG support
 - Command-line interface for easy integration with scripts and tools
 - Modern, responsive web interface
+- Comprehensive Software Bill of Materials (SBOM) with each release
 
 ## Installation
 
