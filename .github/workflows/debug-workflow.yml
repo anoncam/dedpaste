@@ -1,0 +1,33 @@
+name: Debug Workflow
+
+on:
+  push:
+    branches:
+      - update-release-pipeline
+  pull_request:
+    types: [opened, synchronize]
+    branches:
+      - update-release-pipeline
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Debug Info
+        run: |
+          echo "Debug workflow running"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "GitHub Actions: ${{ toJson(github.workflow) }}"
+          echo "Action: ${{ github.action }}"
+          
+          echo "Files changed:"
+          git diff --name-only HEAD^ HEAD || echo "Could not get diff"
+          
+          echo "package.json version:"
+          cat package.json | grep "version" || echo "Could not get version"
