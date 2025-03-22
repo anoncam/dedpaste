@@ -7,8 +7,9 @@ This document explains how the automated release process works for this project.
 The project includes an automated workflow that:
 1. Bumps the version in package.json when PRs are merged to main
 2. Triggers the release process
-3. Creates a GitHub release
-4. Publishes to npm
+3. Creates a GitHub release with detailed release notes
+4. Generates and publishes a Software Bill of Materials (SBOM)
+5. Publishes to npm with provenance
 
 ### How It Works
 
@@ -16,21 +17,55 @@ The project includes an automated workflow that:
    - When a PR is merged to the `main` branch, it triggers the `auto-version-bump.yml` workflow
 
 2. **Version Bump Type**
-   - The workflow checks for labels on the PR to determine how to bump the version:
-     - `major`: Increments the major version (e.g., 1.0.0 → 2.0.0)
-     - `minor`: Increments the minor version (e.g., 1.0.0 → 1.1.0)
-     - No label or any other label: Increments the patch version (e.g., 1.0.0 → 1.0.1)
+   - The workflow determines how to bump the version through multiple methods:
+     - **Explicit PR Labels**:
+       - `major`: Increments the major version (e.g., 1.0.0 → 2.0.0)
+       - `minor`: Increments the minor version (e.g., 1.0.0 → 1.1.0)
+       - `patch`: Increments the patch version (e.g., 1.0.0 → 1.0.1)
+     - **Conventional Commits Detection**:
+       - PR title with `BREAKING CHANGE:` or using `!` notation → Major bump
+       - PR title with `feat:` prefix → Minor bump
+       - PR title with `fix:` prefix → Patch bump
+     - **PR Commit Analysis**:
+       - If PR title doesn't follow conventional commit format, the workflow analyzes the commits in the PR
+       - If any commit has breaking changes → Major bump
+       - If any commit has new features → Minor bump
+       - If any commit has bug fixes → Patch bump
 
 3. **Version Update**
    - The workflow updates `package.json` with the new version
-   - Commits the change back to the `main` branch
+   - Commits the change back to the `main` branch with the PR reference
 
 4. **Release Workflow**
    - The version change in `package.json` triggers the `release.yml` workflow
    - This workflow:
      - Builds and tests the package
+     - Generates a comprehensive SBOM using CycloneDX
+     - Creates detailed release notes including:
+       - All changes since previous release
+       - List of merged PRs with authors
+       - Documentation links
      - Creates a GitHub release with the new version tag
-     - Publishes the package to npm with provenance
+     - Attaches the SBOM to the GitHub release
+     - Publishes the package to npm with provenance and SBOM metadata
+
+### Software Bill of Materials (SBOM)
+
+The automated process generates a CycloneDX SBOM with each release, which:
+- Lists all dependencies with their versions
+- Identifies dependency licenses
+- Provides component metadata
+- Is attached to each GitHub release as an asset
+- Is embedded in the npm package metadata
+- Helps with security auditing and compliance
+
+### Detailed Release Notes
+
+Each release automatically includes comprehensive release notes with:
+- A summary of all changes since the last release
+- Commit history with author attribution
+- List of merged PRs with labels
+- Links to documentation
 
 ### How to Use This Process
 
@@ -44,18 +79,24 @@ As a contributor:
 2. **Make Your Changes**
    - Implement features or fix bugs
    - Add tests if appropriate
+   - Use conventional commit messages where possible:
+     - `feat: add new feature` (Minor version bump)
+     - `fix: resolve issue with X` (Patch version bump)
+     - `feat!: completely redesign API` or `BREAKING CHANGE: redesign API` (Major version bump)
 
 3. **Create a Pull Request**
    - Push your branch and open a PR to `main`
-   - Add the appropriate label based on the change:
+   - Optionally add an appropriate label based on the change:
      - `major`: Breaking changes
      - `minor`: New features (backward compatible)
-     - No label: Bug fixes, documentation updates, etc.
+     - `patch`: Bug fixes, documentation updates, etc.
+   - If no label is added, the version will be determined by analyzing your PR title and commits
 
 4. **After Merge**
-   - When your PR is merged, the version will be automatically bumped
-   - A new release will be created on GitHub
-   - The package will be published to npm
+   - When your PR is merged, the version will be automatically bumped based on the changes
+   - A new release will be created on GitHub with detailed notes
+   - An SBOM will be generated and attached to the release
+   - The package will be published to npm with provenance
 
 ### Manual Override
 

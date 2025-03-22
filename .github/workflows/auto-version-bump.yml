@@ -31,13 +31,72 @@ jobs:
         run: |
           PR_LABELS="${{ toJson(github.event.pull_request.labels.*.name) }}"
           
+          # Determine conventional commit type from PR title or commits
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          # Function to determine bump type from conventional commits
+          determine_bump_type() {
+            local commits=$1
+            local has_breaking=false
+            local has_feat=false
+            local has_fix=false
+            
+            while IFS= read -r commit_msg; do
+              if [[ "$commit_msg" =~ ^BREAKING\ CHANGE: || "$commit_msg" =~ ^[a-z]+(\([a-z]+\))?!: ]]; then
+                has_breaking=true
+              elif [[ "$commit_msg" =~ ^feat(\([a-z]+\))?: ]]; then
+                has_feat=true
+              elif [[ "$commit_msg" =~ ^fix(\([a-z]+\))?: ]]; then
+                has_fix=true
+              fi
+            done <<< "$commits"
+            
+            if [[ "$has_breaking" == "true" ]]; then
+              echo "major"
+            elif [[ "$has_feat" == "true" ]]; then
+              echo "minor"
+            elif [[ "$has_fix" == "true" ]]; then
+              echo "patch"
+            else
+              echo "patch"  # Default
+            fi
+          }
+          
+          # Check PR title for conventional commit format
+          AUTO_BUMP_TYPE=""
+          if [[ "$PR_TITLE" =~ ^BREAKING\ CHANGE: || "$PR_TITLE" =~ ^[a-z]+(\([a-z]+\))?!: ]]; then
+            AUTO_BUMP_TYPE="major"
+          elif [[ "$PR_TITLE" =~ ^feat(\([a-z]+\))?: ]]; then
+            AUTO_BUMP_TYPE="minor"
+          elif [[ "$PR_TITLE" =~ ^fix(\([a-z]+\))?: ]]; then
+            AUTO_BUMP_TYPE="patch"
+          else
+            # Check PR commits for conventional commit format
+            echo "PR title not in conventional commit format, checking commits..."
+            PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].messageHeadline')
+            AUTO_BUMP_TYPE=$(determine_bump_type "$PR_COMMITS")
+          fi
+          
+          echo "Auto-detected bump type from commits/title: $AUTO_BUMP_TYPE"
+          
+          # Explicit labels take precedence over auto-detection
           if echo "$PR_LABELS" | grep -q '"major"'; then
             echo "bump_type=major" >> $GITHUB_OUTPUT
+            echo "Explicit 'major' label found, using it"
           elif echo "$PR_LABELS" | grep -q '"minor"'; then
             echo "bump_type=minor" >> $GITHUB_OUTPUT
-          else
-            # Default to patch if no specific label found
+            echo "Explicit 'minor' label found, using it"
+          elif echo "$PR_LABELS" | grep -q '"patch"'; then
             echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "Explicit 'patch' label found, using it"
+          elif [ -n "$AUTO_BUMP_TYPE" ]; then
+            echo "bump_type=$AUTO_BUMP_TYPE" >> $GITHUB_OUTPUT
+            echo "Using auto-detected bump type: $AUTO_BUMP_TYPE"
+          else
+            # Default to patch if no specific indication found
+            echo "bump_type=patch" >> $GITHUB_OUTPUT
+            echo "No version indicators found, defaulting to patch"
           fi
       
       - name: Setup Node.js
@@ -65,6 +124,7 @@ jobs:
           
           echo "Current version: $CURRENT_VERSION"
           echo "New version: $NEW_VERSION"
+          echo "Bump type: ${{ steps.check-label.outputs.bump_type }}"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           
           # Update package.json with new version
@@ -73,12 +133,16 @@ jobs:
       - name: Commit and push version bump
         run: |
           git add package.json
-          git commit -m "Bump version to ${{ steps.bump-version.outputs.new_version }}"
+          git commit -m "Bump version to ${{ steps.bump-version.outputs.new_version }} [skip ci]
+
+          Version bump type: ${{ steps.check-label.outputs.bump_type }}
+          PR: #${{ github.event.pull_request.number }}
+          Title: ${{ github.event.pull_request.title }}"
           git push
       
       - name: Output summary
         run: |
-          echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }}"
+          echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }} (${{ steps.check-label.outputs.bump_type }} bump)"
           echo "🚀 The release workflow will be triggered automatically by this change."
       
       # Create repository dispatch event to trigger the release workflow
@@ -87,4 +151,4 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           event-type: version-bumped
-          client-payload: '{"version": "${{ steps.bump-version.outputs.new_version }}"}'
+          client-payload: '{"version": "${{ steps.bump-version.outputs.new_version }}", "bump_type": "${{ steps.check-label.outputs.bump_type }}", "pr_number": "${{ github.event.pull_request.number }}", "pr_title": "${{ github.event.pull_request.title }}"}'

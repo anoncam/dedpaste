@@ -110,8 +110,120 @@ jobs:
             echo "version_changed=false" >> $GITHUB_OUTPUT
           fi
 
-  build-and-release:
+  generate-sbom:
     needs: check-version
+    if: needs.check-version.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sbom_path: ${{ steps.generate-sbom.outputs.sbom_path }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 10
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate SBOM with CycloneDX
+        id: generate-sbom
+        run: |
+          # Install CycloneDX tool for npm
+          npm install -g @cyclonedx/cyclonedx-npm
+          
+          # Generate SBOM
+          cyclonedx-npm --output-format json --output-file sbom.json
+          echo "sbom_path=sbom.json" >> $GITHUB_OUTPUT
+          
+          # Log SBOM generation
+          echo "Generated SBOM for dedpaste v${{ needs.check-version.outputs.new_version }}"
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-v${{ needs.check-version.outputs.new_version }}
+          path: sbom.json
+          retention-days: 90
+
+  generate-release-notes:
+    needs: check-version
+    if: needs.check-version.outputs.version_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release_notes: ${{ steps.generate-notes.outputs.release_notes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
+
+      - name: Generate Release Notes
+        id: generate-notes
+        run: |
+          # Find the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            # If there's no previous tag, use the first commit
+            PREV_COMMIT=$(git rev-list --max-parents=0 HEAD)
+            CHANGES=$(git log --pretty=format:"- %s [%h] (%an)" $PREV_COMMIT..HEAD)
+          else
+            # Otherwise use the previous tag
+            CHANGES=$(git log --pretty=format:"- %s [%h] (%an)" $PREV_TAG..HEAD)
+          fi
+          
+          # Get merged PRs since last release
+          MERGED_PRS=$(gh pr list --state merged --base main --json number,title,labels,mergedAt,author --limit 100 | jq -r '.[] | select(.mergedAt != null) | "- #\(.number) \(.title) (@\(.author.login))\n  Labels: \(.labels | map(.name) | join(", "))"')
+
+          # Create release notes with sections
+          RELEASE_NOTES=$(cat <<EOF
+## What's New in v${{ needs.check-version.outputs.new_version }}
+
+### Changes
+$CHANGES
+
+### Merged Pull Requests
+$MERGED_PRS
+
+### Documentation
+- Full documentation available at: https://github.com/anoncam/dedpaste#readme
+- See [CONTRIBUTING.md](https://github.com/anoncam/dedpaste/blob/main/CONTRIBUTING.md) for contribution guidelines
+EOF
+          )
+          
+          # Escape newlines and quotes for GitHub Actions output
+          RELEASE_NOTES_ESCAPED="${RELEASE_NOTES//'%'/'%25'}"
+          RELEASE_NOTES_ESCAPED="${RELEASE_NOTES_ESCAPED//$'\n'/'%0A'}"
+          RELEASE_NOTES_ESCAPED="${RELEASE_NOTES_ESCAPED//$'\r'/'%0D'}"
+          
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$RELEASE_NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          # Also save to file for later use
+          echo "$RELEASE_NOTES" > release_notes.md
+
+      - name: Upload release notes as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-notes-v${{ needs.check-version.outputs.new_version }}
+          path: release_notes.md
+          retention-days: 90
+
+  build-and-release:
+    needs: [check-version, generate-sbom, generate-release-notes]
     if: needs.check-version.outputs.version_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -150,13 +262,8 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
-        run: |
-          # Use npm install instead of npm ci to ensure packages are installed correctly
-          # This allows for modifications to package.json that may not be reflected in package-lock.json
-          npm install
+        run: npm install
           
-          # No need to install Jest globally as it's now in package.json and node_modules
-        
       - name: Debug npm environment
         run: |
           echo "Node version: $(node -v)"
@@ -177,6 +284,17 @@ jobs:
             NODE_OPTIONS="--experimental-vm-modules" ./node_modules/.bin/mocha "test/**/*.test.js"
           )
 
+      # Download SBOM and release notes artifacts
+      - name: Download SBOM
+        uses: actions/download-artifact@v3
+        with:
+          name: sbom-v${{ needs.check-version.outputs.new_version }}
+          
+      - name: Download Release Notes
+        uses: actions/download-artifact@v3
+        with:
+          name: release-notes-v${{ needs.check-version.outputs.new_version }}
+
       - name: Create GitHub Release
         id: create_release
         uses: actions/create-release@v1
@@ -185,17 +303,31 @@ jobs:
         with:
           tag_name: v${{ needs.check-version.outputs.new_version }}
           release_name: Release v${{ needs.check-version.outputs.new_version }}
-          body: |
-            Release version ${{ needs.check-version.outputs.new_version }}
-            
-            This is an automated release created when the package.json version was updated.
+          body_path: release_notes.md
           draft: false
           prerelease: false
+          
+      - name: Upload SBOM to GitHub Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: sbom.json
+          asset_name: dedpaste-v${{ needs.check-version.outputs.new_version }}-sbom.json
+          asset_content_type: application/json
 
       - name: Setup NPM Authentication
         run: |
           echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
           npm whoami || echo "Authentication failed, but continuing..."
+
+      - name: Attach SBOM to NPM package
+        run: |
+          # Include SBOM in the package for npm publish
+          cp sbom.json ./dedpaste-sbom.json
+          # Update package.json to include SBOM metadata
+          node -e "const fs = require('fs'); const pkg = require('./package.json'); pkg.sbom = 'dedpaste-sbom.json'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
 
       # Using Provenance for npm supply chain security
       # https://docs.npmjs.com/generating-provenance-statements
