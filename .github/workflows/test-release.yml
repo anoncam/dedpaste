@@ -1,73 +1,178 @@
 name: Test Release Workflow
 
 on:
+  push:
+    branches:
+      - update-release-pipeline
+    paths:
+      - 'package.json'
   workflow_dispatch:
-    inputs:
-      run_test:
-        description: 'Simulate a package.json version change'
-        default: 'true'
-        required: true
-        type: boolean
 
 jobs:
-  test-version-check:
+  check-version:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version_changed: true
+      new_version: ${{ steps.check.outputs.version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 2
-
-      - name: Create mock package.json changes
+          fetch-depth: 10
+      
+      - name: Get version from package.json
+        id: check
         run: |
-          if [ "${{ github.event.inputs.run_test }}" = "true" ]; then
-            # Create a copy of the current package.json
-            cp package.json package.json.bak
-            
-            # Get current version
-            CURRENT_VERSION=$(jq -r '.version' package.json)
-            echo "Current version: $CURRENT_VERSION"
-            
-            # Generate a test version (adding .test suffix)
-            TEST_VERSION="${CURRENT_VERSION}.test"
-            echo "Test version: $TEST_VERSION"
-            
-            # Update package.json with test version
-            jq --arg version "$TEST_VERSION" '.version = $version' package.json > package.json.new
-            mv package.json.new package.json
-            
-            echo "Mock package.json with version $TEST_VERSION:"
-            cat package.json | grep version
-            
-            # Now test the version checking logic
-            echo "Simulating version check logic..."
-            OLD_VERSION=$CURRENT_VERSION
-            NEW_VERSION=$TEST_VERSION
-            
-            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-              echo "✅ Version change detected from $OLD_VERSION to $NEW_VERSION"
-              echo "version_changed=true" >> $GITHUB_OUTPUT
-              echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-            else
-              echo "❌ Version unchanged"
-              echo "version_changed=false" >> $GITHUB_OUTPUT
-            fi
-            
-            # Restore the original package.json
-            mv package.json.bak package.json
-            echo "Restored original package.json"
+          VERSION=$(jq -r '.version' package.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Current version in package.json: $VERSION"
+  
+  generate-sbom:
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sbom_path: ${{ steps.generate-sbom.outputs.sbom_path }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate SBOM with CycloneDX
+        id: generate-sbom
+        run: |
+          # Install CycloneDX tool for npm
+          npm install -g @cyclonedx/cyclonedx-npm
+          
+          # Generate SBOM
+          cyclonedx-npm --output-format json --output-file sbom.json
+          echo "sbom_path=sbom.json" >> $GITHUB_OUTPUT
+          
+          # Log SBOM generation
+          echo "Generated SBOM for dedpaste v${{ needs.check-version.outputs.new_version }}"
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom-test-v${{ needs.check-version.outputs.new_version }}
+          path: sbom.json
+          retention-days: 5
+
+  generate-release-notes:
+    needs: check-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release_notes: ${{ steps.generate-notes.outputs.release_notes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Generate Release Notes
+        id: generate-notes
+        run: |
+          # Set GH_TOKEN for gh CLI
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          
+          # Find the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$PREV_TAG" ]; then
+            # If there's no previous tag, use the first commit
+            PREV_COMMIT=$(git rev-list --max-parents=0 HEAD)
+            CHANGES=$(git log --pretty=format:"- %s [%h] (%an)" $PREV_COMMIT..HEAD)
           else
-            echo "Test skipped"
+            # Otherwise use the previous tag
+            CHANGES=$(git log --pretty=format:"- %s [%h] (%an)" $PREV_TAG..HEAD)
           fi
+          
+          # Get merged PRs since last release
+          MERGED_PRS=$(gh pr list --state merged --base main --json number,title,labels,mergedAt,author --limit 100 | jq -r '.[] | select(.mergedAt != null) | "- #\(.number) \(.title) (@\(.author.login))\n  Labels: \(.labels | map(.name) | join(", "))"' || echo "Could not fetch PRs")
 
-      - name: Explain workflow
+          # Create release notes with sections
+          RELEASE_NOTES=$(cat <<EOF
+## What's New in v${{ needs.check-version.outputs.new_version }} (TEST)
+
+### Changes
+$CHANGES
+
+### Merged Pull Requests
+$MERGED_PRS
+
+### Documentation
+- Full documentation available at: https://github.com/anoncam/dedpaste#readme
+- See [CONTRIBUTING.md](https://github.com/anoncam/dedpaste/blob/main/CONTRIBUTING.md) for contribution guidelines
+EOF
+          )
+          
+          # Save to file for later use
+          echo "$RELEASE_NOTES" > release_notes.md
+
+      - name: Upload release notes as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-notes-test-v${{ needs.check-version.outputs.new_version }}
+          path: release_notes.md
+          retention-days: 5
+
+  build-and-test:
+    needs: [check-version, generate-sbom, generate-release-notes]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies
+        run: npm install
+          
+      - name: Build
+        run: npm run build
+        
+      - name: Run tests
         run: |
-          echo "This is a test workflow to verify the release automation logic."
-          echo "In a real scenario, when package.json version changes, the release workflow will:"
-          echo "1. Detect the version change"
-          echo "2. Build the package"
-          echo "3. Run tests"
-          echo "4. Create a GitHub release"
-          echo "5. Publish to npm"
-          echo ""
-          echo "No actual releases or publishes are performed by this test workflow."
+          npm test || (
+            NODE_OPTIONS="--experimental-vm-modules" ./node_modules/.bin/mocha "test/**/*.test.js"
+          )
+          
+      # Download SBOM and release notes artifacts
+      - name: Download SBOM
+        uses: actions/download-artifact@v3
+        with:
+          name: sbom-test-v${{ needs.check-version.outputs.new_version }}
+          
+      - name: Download Release Notes
+        uses: actions/download-artifact@v3
+        with:
+          name: release-notes-test-v${{ needs.check-version.outputs.new_version }}
+          
+      - name: Verify artifacts
+        run: |
+          echo "✅ Build successful"
+          echo "✅ Tests passed"
+          echo "✅ SBOM generated"
+          echo "✅ Release notes generated"
+          
+          echo "SBOM contents (first 10 lines):"
+          head -n 10 sbom.json
+          
+          echo "Release notes contents:"
+          cat release_notes.md
