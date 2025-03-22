@@ -1,0 +1,48 @@
+name: Debug Push Events
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 10
+      
+      - name: Debug push event
+        run: |
+          echo "Debug push event job running"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          
+          # Get list of changed files
+          echo "Changed files in this push:"
+          git diff --name-only HEAD~ HEAD || echo "Could not get changed files"
+          
+          # Check if package.json changed
+          if git diff --name-only HEAD~ HEAD | grep -q "package.json"; then
+            echo "✅ package.json WAS changed in this push"
+            
+            # Get package.json version
+            VERSION=$(jq -r '.version' package.json)
+            echo "Current version: $VERSION"
+            
+            # Get previous version
+            PREV_VERSION=$(git show HEAD~:package.json | jq -r '.version')
+            echo "Previous version: $PREV_VERSION"
+            
+            # Compare versions
+            if [ "$PREV_VERSION" != "$VERSION" ]; then
+              echo "Version changed from $PREV_VERSION to $VERSION"
+            else
+              echo "Version unchanged: $VERSION"
+            fi
+          else
+            echo "❌ package.json was NOT changed in this push"
+          fi
