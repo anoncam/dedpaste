@@ -74,6 +74,8 @@ jobs:
           else
             # Check PR commits for conventional commit format
             echo "PR title not in conventional commit format, checking commits..."
+            # Set GH_TOKEN for gh CLI
+            export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
             PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].messageHeadline')
             AUTO_BUMP_TYPE=$(determine_bump_type "$PR_COMMITS")
           fi
