@@ -151,14 +151,17 @@ jobs:
       # Add a special commit file to trigger the release workflow
       - name: Create release trigger file
         run: |
-          # Create a special file to trigger the release workflow
+          # Create a special file to trigger the release workflow with timestamp to ensure uniqueness
           echo "Creating trigger file for release..."
-          mkdir -p .github
-          echo "VERSION=${{ steps.bump-version.outputs.new_version }}" > .github/release-trigger.txt
+          mkdir -p .github/triggers
+          TIMESTAMP=$(date +%s)
+          
+          # Use version and timestamp to ensure file is always unique
+          echo "VERSION=${{ steps.bump-version.outputs.new_version }}" > .github/triggers/release-${{ steps.bump-version.outputs.new_version }}-${TIMESTAMP}.txt
           
           # Commit and push the trigger file
-          git add .github/release-trigger.txt
-          git commit -m "trigger: release version ${{ steps.bump-version.outputs.new_version }}"
+          git add .github/triggers/
+          git commit -m "trigger: release version ${{ steps.bump-version.outputs.new_version }} [${TIMESTAMP}]"
           git push
           
           echo "Release trigger committed and pushed. The release workflow should start automatically."

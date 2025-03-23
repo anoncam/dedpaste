@@ -9,17 +9,18 @@ on:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
   
-  # Triggered by package.json changes or release trigger file
+  # Triggered by package.json changes or release trigger files
   push:
     branches:
       - main
     paths:
       - 'package.json'
-      - '.github/release-trigger.txt'
+      - '.github/triggers/**'
   
   # Also triggered when auto-version-bump workflow completes successfully
   workflow_run:
-    workflows: ["Auto Version Bump"]
+    workflows: 
+      - "Auto Version Bump"
     types:
       - completed
     branches:
@@ -60,6 +61,12 @@ jobs:
           
           echo "Recent commits on main:"
           git log -n 5 --pretty=format:"%h %s"
+          
+          echo "Checking for trigger files:"
+          find .github -type f -name "*.txt" 2>/dev/null || echo "No trigger files found"
+          
+          echo "Package.json version:"
+          cat package.json | grep version || echo "Could not find version in package.json"
           echo "========================================"
       
       - name: Get version from package.json or trigger file
@@ -73,9 +80,11 @@ jobs:
             exit 0
           fi
           
-          # Check if we have a trigger file with a version
-          if [ -f ".github/release-trigger.txt" ]; then
-            TRIGGER_VERSION=$(grep "VERSION=" .github/release-trigger.txt | cut -d= -f2)
+          # Check if we have any trigger files with a version
+          TRIGGER_FILES=$(find .github/triggers -name "release-*.txt" 2>/dev/null | sort -r | head -n 1)
+          if [ -n "$TRIGGER_FILES" ]; then
+            echo "Found trigger file: $TRIGGER_FILES"
+            TRIGGER_VERSION=$(grep "VERSION=" "$TRIGGER_FILES" | cut -d= -f2)
             if [ -n "$TRIGGER_VERSION" ]; then
               echo "Using version from trigger file: $TRIGGER_VERSION"
               echo "version=$TRIGGER_VERSION" >> $GITHUB_OUTPUT
@@ -146,6 +155,18 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             if [ "${{ github.event.workflow_run.conclusion }}" = "success" ]; then
               echo "Auto Version Bump completed successfully - proceeding with release"
+              
+              # Get the head SHA from the workflow run
+              HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+              echo "Source workflow HEAD SHA: $HEAD_SHA"
+              
+              # Check if we have a package.json change in the workflow run
+              git fetch origin main
+              
+              # Get the current version from package.json
+              CURRENT_VERSION=$(jq -r '.version' package.json)
+              echo "Current version from package.json: $CURRENT_VERSION"
+              
               echo "proceed=true" >> $GITHUB_OUTPUT
             else
               echo "Auto Version Bump did not complete successfully - skipping release"
