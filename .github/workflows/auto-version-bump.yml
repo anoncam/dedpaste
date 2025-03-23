@@ -93,8 +93,20 @@ jobs:
               AUTO_BUMP_TYPE="patch"
             else
               echo "Found commits, analyzing conventional commit patterns"
-              # Capture only the last line of output from determine_bump_type
-              AUTO_BUMP_TYPE=$(determine_bump_type "$PR_COMMITS" | tail -n 1)
+
+              # Call the function and store all output
+              BUMP_TYPE_OUTPUT=$(determine_bump_type "$PR_COMMITS")
+              echo "Function output: $BUMP_TYPE_OUTPUT"
+
+              # Extract just the last word from the output (major, minor, or patch)
+              AUTO_BUMP_TYPE=$(echo "$BUMP_TYPE_OUTPUT" | grep -o -E '(major|minor|patch)' | tail -n 1)
+              echo "Extracted bump type: $AUTO_BUMP_TYPE"
+
+              # Fallback to patch if extraction failed
+              if [ -z "$AUTO_BUMP_TYPE" ]; then
+                echo "Failed to extract bump type, defaulting to patch"
+                AUTO_BUMP_TYPE="patch"
+              fi
             fi
           fi
 
