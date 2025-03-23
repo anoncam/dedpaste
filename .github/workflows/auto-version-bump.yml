@@ -36,32 +36,37 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_BODY="${{ github.event.pull_request.body }}"
           
-          # Function to determine bump type from conventional commits
+          # Simple, robust function to determine bump type from conventional commits
           determine_bump_type() {
-            local commits=$1
-            local has_breaking=false
-            local has_feat=false
-            local has_fix=false
+            local commits="$1"
             
-            while IFS= read -r commit_msg; do
-              if [[ "$commit_msg" =~ ^BREAKING\ CHANGE: || "$commit_msg" =~ ^[a-z]+(\([a-z]+\))?!: ]]; then
-                has_breaking=true
-              elif [[ "$commit_msg" =~ ^feat(\([a-z]+\))?: ]]; then
-                has_feat=true
-              elif [[ "$commit_msg" =~ ^fix(\([a-z]+\))?: ]]; then
-                has_fix=true
-              fi
-            done <<< "$commits"
+            echo "Analyzing commits for conventional commit patterns..."
             
-            if [[ "$has_breaking" == "true" ]]; then
+            # Check for breaking changes first (highest priority)
+            if echo "$commits" | grep -q "^BREAKING CHANGE:" || echo "$commits" | grep -qE "^[a-z]+(\([a-z]+\))?!:"; then
+              echo "Found breaking change - will use major bump"
               echo "major"
-            elif [[ "$has_feat" == "true" ]]; then
-              echo "minor"
-            elif [[ "$has_fix" == "true" ]]; then
-              echo "patch"
-            else
-              echo "patch"  # Default
+              return 0
             fi
+            
+            # Then check for features
+            if echo "$commits" | grep -qE "^feat(\([a-z]+\))?:"; then
+              echo "Found feature - will use minor bump"
+              echo "minor"
+              return 0
+            fi
+            
+            # Then check for fixes
+            if echo "$commits" | grep -qE "^fix(\([a-z]+\))?:"; then
+              echo "Found fix - will use patch bump"
+              echo "patch"
+              return 0
+            fi
+            
+            # Default to patch if no patterns match
+            echo "No conventional commit patterns found - defaulting to patch"
+            echo "patch"
+            return 0
           }
           
           # Check PR title for conventional commit format
@@ -75,10 +80,21 @@ jobs:
           else
             # Check PR commits for conventional commit format
             echo "PR title not in conventional commit format, checking commits..."
+            
             # Set GH_TOKEN for gh CLI
             export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].messageHeadline')
-            AUTO_BUMP_TYPE=$(determine_bump_type "$PR_COMMITS")
+            
+            # Safely capture commits, providing a fallback if the command fails
+            echo "Fetching commits from PR #${{ github.event.pull_request.number }}..."
+            PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].messageHeadline' 2>/dev/null || echo "")
+            
+            if [ -z "$PR_COMMITS" ]; then
+              echo "Failed to get PR commits or no commits found - defaulting to patch"
+              AUTO_BUMP_TYPE="patch"
+            else
+              echo "Found commits, analyzing conventional commit patterns"
+              AUTO_BUMP_TYPE=$(determine_bump_type "$PR_COMMITS")
+            fi
           fi
           
           echo "Auto-detected bump type from commits/title: $AUTO_BUMP_TYPE"
