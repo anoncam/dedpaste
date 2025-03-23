@@ -1,22 +1,10 @@
-name: Release to NPM
+# DEPRECATED: Please use release-with-sbom.yml instead
+# This workflow is kept for reference but should not be triggered automatically
+
+name: Legacy Release to NPM (DEPRECATED)
 
 on:
-  # This is the key trigger - when package.json is changed on main
-  push:
-    branches:
-      - main
-    paths:
-      - 'package.json'
-  
-  # This is a backup trigger - when Auto Version Bump workflow completes
-  workflow_run:
-    workflows: ["Auto Version Bump"]
-    types:
-      - completed
-    branches:
-      - main
-      
-  # Manual trigger for testing and emergency releases
+  # Manual trigger only - this workflow is deprecated
   workflow_dispatch:
     inputs:
       version:

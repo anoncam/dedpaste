@@ -4,6 +4,10 @@ name: Release with SBOM and Notes
 
 on:
   workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Force release of specific version (leave empty to use package.json)'
+        required: false
   
   # Triggered by package.json changes
   push:
@@ -33,22 +37,97 @@ jobs:
           fetch-depth: 0  # Full history for release notes
           ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
       
+      - name: Debug workflow metadata
+        run: |
+          echo "========== WORKFLOW DEBUG INFO =========="
+          echo "Event name: ${{ github.event_name }}"
+          echo "Event trigger: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Repository: ${{ github.repository }}"
+          
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "Workflow run details:"
+            echo "  Source workflow: ${{ github.event.workflow_run.name }}"
+            echo "  Workflow ID: ${{ github.event.workflow_run.id }}"
+            echo "  Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+            echo "  Source HEAD SHA: ${{ github.event.workflow_run.head_sha }}"
+          fi
+          
+          echo "Listing repository tags:"
+          git tag --list -n
+          
+          echo "Recent commits on main:"
+          git log -n 5 --pretty=format:"%h %s"
+          echo "========================================"
+      
       - name: Get version from package.json
         id: get-version
         run: |
-          VERSION=$(jq -r '.version' package.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Current version in package.json: $VERSION"
+          # First check if we're using a forced version from workflow_dispatch
+          FORCE_VERSION="${{ github.event.inputs.force_version }}"
+          if [ -n "$FORCE_VERSION" ]; then
+            echo "Using forced version from workflow dispatch: $FORCE_VERSION"
+            echo "version=$FORCE_VERSION" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Otherwise get version from package.json
+          if [ -f "package.json" ]; then
+            VERSION=$(jq -r '.version' package.json)
+            echo "Current version in package.json: $VERSION"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          else
+            echo "ERROR: package.json not found!"
+            echo "Files in current directory:"
+            ls -la
+            exit 1
+          fi
+      
+      - name: Check for existing GitHub release
+        id: check-release
+        run: |
+          VERSION="${{ steps.get-version.outputs.version }}"
+          echo "Checking if GitHub release v$VERSION already exists..."
+          
+          # Set GH_TOKEN for gh CLI
+          export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          
+          if gh release view "v$VERSION" &> /dev/null; then
+            echo "::warning::Release v$VERSION already exists!"
+            echo "release_exists=true" >> $GITHUB_OUTPUT
+            
+            # Get release URL
+            RELEASE_URL=$(gh release view "v$VERSION" --json url -q .url)
+            echo "Existing release: $RELEASE_URL"
+          else
+            echo "No existing release for v$VERSION found, can proceed with new release"
+            echo "release_exists=false" >> $GITHUB_OUTPUT
+          fi
       
       - name: Check if we should proceed with release
         id: check
         run: |
           echo "Event name: ${{ github.event_name }}"
           
-          # Always proceed for workflow_dispatch (manual trigger)
+          # Always honor forced release for manual workflow dispatch
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FORCE_VERSION="${{ github.event.inputs.force_version }}"
+            if [ -n "$FORCE_VERSION" ]; then
+              echo "Manual workflow trigger with forced version - proceeding with release"
+              echo "proceed=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
             echo "Manual workflow trigger - proceeding with release"
             echo "proceed=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if release already exists
+          if [ "${{ steps.check-release.outputs.release_exists }}" = "true" ]; then
+            echo "::warning::Release already exists for this version - skipping release"
+            echo "proceed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -76,7 +155,7 @@ jobs:
               exit 0
             fi
             
-            OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version')
+            OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version' || echo "unknown")
             echo "Previous version: $OLD_VERSION"
             NEW_VERSION=$(jq -r '.version' package.json)
             echo "Current version: $NEW_VERSION"
@@ -238,6 +317,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Needed for creating releases
+      id-token: write  # Needed for npm provenance
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -247,6 +327,14 @@ jobs:
         run: |
           echo "version=${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
           echo "Using version: ${{ needs.check-version.outputs.version }}"
+      
+      - name: Debug release information
+        run: |
+          echo "========== RELEASE DEBUG INFO =========="
+          echo "Release version: v${{ needs.check-version.outputs.version }}"
+          echo "Creating tag: v${{ needs.check-version.outputs.version }}"
+          echo "Checking if artifacts are available..."
+          echo "========================================"
       
       - name: Download build artifacts
         uses: actions/download-artifact@v3
@@ -266,8 +354,38 @@ jobs:
           name: release-notes
           path: ./
       
+      - name: Verify artifacts  
+        run: |
+          echo "Checking for downloaded artifacts..."
+          
+          if [ -f "./RELEASE_NOTES.md" ]; then
+            echo "✅ Release notes found"
+            echo "Content preview:"
+            head -n 5 ./RELEASE_NOTES.md
+          else
+            echo "❌ Release notes not found!"
+            ls -la ./
+          fi
+          
+          if [ -f "./bom.json" ]; then
+            echo "✅ SBOM file found"
+          else
+            echo "❌ SBOM file not found!"
+            ls -la ./
+          fi
+          
+          echo "Build artifacts:"
+          ls -la dist/ || echo "Dist directory not found!"
+      
+      - name: Setup Node.js for publishing
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+      
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        id: create_release
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Release v${{ steps.version.outputs.version }}
@@ -277,14 +395,20 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: false # We create our own custom notes
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Publish to NPM
         if: success()
         run: |
+          echo "Version in package.json before publishing:"
+          cat package.json | grep version
+          
           echo "Publishing to NPM with provenance and SBOM metadata"
           npm publish --provenance
+          
+          echo "NPM publish complete"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
@@ -292,4 +416,5 @@ jobs:
         run: |
           echo "✅ Release process complete"
           echo "Version: v${{ steps.version.outputs.version }}"
+          echo "Release URL: ${{ steps.create_release.outputs.url }}"
           echo "SBOM and detailed release notes published to GitHub release"
