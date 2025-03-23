@@ -14,61 +14,61 @@ jobs:
       contents: write
       pull-requests: write
       actions: write # Needed to trigger workflows
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Setup Git
         run: |
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-      
+
       - name: Check PR label for version bump type
         id: check-label
         run: |
           PR_LABELS="${{ toJson(github.event.pull_request.labels.*.name) }}"
-          
+
           # Determine conventional commit type from PR title or commits
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_BODY="${{ github.event.pull_request.body }}"
-          
+
           # Simple, robust function to determine bump type from conventional commits
           determine_bump_type() {
             local commits="$1"
-            
+
             echo "Analyzing commits for conventional commit patterns..."
-            
+
             # Check for breaking changes first (highest priority)
             if echo "$commits" | grep -q "^BREAKING CHANGE:" || echo "$commits" | grep -qE "^[a-z]+(\([a-z]+\))?!:"; then
               echo "Found breaking change - will use major bump"
               echo "major"
               return 0
             fi
-            
+
             # Then check for features
             if echo "$commits" | grep -qE "^feat(\([a-z]+\))?:"; then
               echo "Found feature - will use minor bump"
               echo "minor"
               return 0
             fi
-            
+
             # Then check for fixes
             if echo "$commits" | grep -qE "^fix(\([a-z]+\))?:"; then
               echo "Found fix - will use patch bump"
               echo "patch"
               return 0
             fi
-            
+
             # Default to patch if no patterns match
             echo "No conventional commit patterns found - defaulting to patch"
             echo "patch"
             return 0
           }
-          
+
           # Check PR title for conventional commit format
           AUTO_BUMP_TYPE=""
           if [[ "$PR_TITLE" =~ ^BREAKING\ CHANGE: || "$PR_TITLE" =~ ^[a-z]+(\([a-z]+\))?!: ]]; then
@@ -80,14 +80,14 @@ jobs:
           else
             # Check PR commits for conventional commit format
             echo "PR title not in conventional commit format, checking commits..."
-            
+
             # Set GH_TOKEN for gh CLI
             export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            
+
             # Safely capture commits, providing a fallback if the command fails
             echo "Fetching commits from PR #${{ github.event.pull_request.number }}..."
             PR_COMMITS=$(gh pr view ${{ github.event.pull_request.number }} --json commits --jq '.commits[].messageHeadline' 2>/dev/null || echo "")
-            
+
             if [ -z "$PR_COMMITS" ]; then
               echo "Failed to get PR commits or no commits found - defaulting to patch"
               AUTO_BUMP_TYPE="patch"
@@ -96,9 +96,9 @@ jobs:
               AUTO_BUMP_TYPE=$(determine_bump_type "$PR_COMMITS")
             fi
           fi
-          
+
           echo "Auto-detected bump type from commits/title: $AUTO_BUMP_TYPE"
-          
+
           # Explicit labels take precedence over auto-detection
           if echo "$PR_LABELS" | grep -q '"major"'; then
             echo "bump_type=major" >> $GITHUB_OUTPUT
@@ -117,21 +117,21 @@ jobs:
             echo "bump_type=patch" >> $GITHUB_OUTPUT
             echo "No version indicators found, defaulting to patch"
           fi
-      
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-      
+
       - name: Install dependencies
         run: npm install -g semver
-      
+
       - name: Bump version
         id: bump-version
         run: |
           # Get current version from package.json
           CURRENT_VERSION=$(node -p "require('./package.json').version")
-          
+
           # Determine new version based on bump type
           if [ "${{ steps.check-label.outputs.bump_type }}" = "major" ]; then
             NEW_VERSION=$(semver -i major $CURRENT_VERSION)
@@ -140,15 +140,15 @@ jobs:
           else
             NEW_VERSION=$(semver -i patch $CURRENT_VERSION)
           fi
-          
+
           echo "Current version: $CURRENT_VERSION"
           echo "New version: $NEW_VERSION"
           echo "Bump type: ${{ steps.check-label.outputs.bump_type }}"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          
+
           # Update package.json with new version
           node -e "const fs = require('fs'); const pkg = require('./package.json'); pkg.version = '$NEW_VERSION'; fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');"
-      
+
       - name: Commit and push version bump
         run: |
           git add package.json
@@ -158,12 +158,12 @@ jobs:
           PR: #${{ github.event.pull_request.number }}
           Title: ${{ github.event.pull_request.title }}"
           git push
-      
+
       - name: Output summary
         run: |
           echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }} (${{ steps.check-label.outputs.bump_type }} bump)"
           echo "🚀 The release-with-sbom workflow will be triggered automatically by this change."
-      
+
       # Add a special commit file to trigger the release workflow
       - name: Create release trigger file
         run: |
@@ -171,13 +171,41 @@ jobs:
           echo "Creating trigger file for release..."
           mkdir -p .github/triggers
           TIMESTAMP=$(date +%s)
-          
+
           # Use version and timestamp to ensure file is always unique
           echo "VERSION=${{ steps.bump-version.outputs.new_version }}" > .github/triggers/release-${{ steps.bump-version.outputs.new_version }}-${TIMESTAMP}.txt
-          
+
           # Commit and push the trigger file
           git add .github/triggers/
           git commit -m "trigger: release version ${{ steps.bump-version.outputs.new_version }} [${TIMESTAMP}]"
+
+          echo "Pushing changes to trigger release workflow..."
           git push
-          
+
           echo "Release trigger committed and pushed. The release workflow should start automatically."
+
+          # Debug information about the workflow
+          echo "========== WORKFLOW DEBUG INFO =========="
+          echo "Workflow name: ${{ github.workflow }}"
+          echo "Job name: ${{ github.job }}"
+          echo "Run ID: ${{ github.run_id }}"
+          echo "Run number: ${{ github.run_number }}"
+          echo "Actor: ${{ github.actor }}"
+          echo "Repository: ${{ github.repository }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "SHA: ${{ github.sha }}"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Workflow permissions:"
+          echo "  Contents: write"
+          echo "  Pull requests: write"
+          echo "  Actions: write"
+          echo "========================================"
+
+          # Wait a moment to ensure the push is processed
+          sleep 5
+
+          echo "Checking if the release workflow was triggered..."
+          # This is just informational and won't affect the workflow
+          curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs?event=workflow_run&status=in_progress" | \
+            grep -o '"name":"Release with SBOM and Notes"' || echo "Release workflow not found in currently running workflows"
