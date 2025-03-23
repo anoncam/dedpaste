@@ -9,12 +9,13 @@ on:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
   
-  # Triggered by package.json changes
+  # Triggered by package.json changes or release trigger file
   push:
     branches:
       - main
     paths:
       - 'package.json'
+      - '.github/release-trigger.txt'
   
   # Also triggered when auto-version-bump workflow completes successfully
   workflow_run:
@@ -61,7 +62,7 @@ jobs:
           git log -n 5 --pretty=format:"%h %s"
           echo "========================================"
       
-      - name: Get version from package.json
+      - name: Get version from package.json or trigger file
         id: get-version
         run: |
           # First check if we're using a forced version from workflow_dispatch
@@ -70,6 +71,16 @@ jobs:
             echo "Using forced version from workflow dispatch: $FORCE_VERSION"
             echo "version=$FORCE_VERSION" >> $GITHUB_OUTPUT
             exit 0
+          fi
+          
+          # Check if we have a trigger file with a version
+          if [ -f ".github/release-trigger.txt" ]; then
+            TRIGGER_VERSION=$(grep "VERSION=" .github/release-trigger.txt | cut -d= -f2)
+            if [ -n "$TRIGGER_VERSION" ]; then
+              echo "Using version from trigger file: $TRIGGER_VERSION"
+              echo "version=$TRIGGER_VERSION" >> $GITHUB_OUTPUT
+              exit 0
+            fi
           fi
           
           # Otherwise get version from package.json
