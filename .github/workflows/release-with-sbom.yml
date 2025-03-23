@@ -1,6 +1,8 @@
 name: Release with SBOM and Notes
 
-# This workflow is triggered when package.json is changed (typically by auto-version-bump.yml)
+# This workflow runs on all pushes to main and checks if a release needs to be created.
+# It compares the current package.json version with existing GitHub releases,
+# and only creates a new release if one doesn't already exist for that version.
 
 on:
   workflow_dispatch:
@@ -9,13 +11,10 @@ on:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
   
-  # Triggered by package.json changes or release trigger files
+  # Run this workflow on EVERY push to main to check for release conditions
   push:
     branches:
       - main
-    paths:
-      - 'package.json'
-      - '.github/triggers/**'
   
   # Also triggered when auto-version-bump workflow completes successfully
   workflow_run:
@@ -80,15 +79,15 @@ jobs:
             exit 0
           fi
           
-          # Check if we have any trigger files with a version
-          TRIGGER_FILES=$(find .github/triggers -name "release-*.txt" 2>/dev/null | sort -r | head -n 1)
-          if [ -n "$TRIGGER_FILES" ]; then
-            echo "Found trigger file: $TRIGGER_FILES"
-            TRIGGER_VERSION=$(grep "VERSION=" "$TRIGGER_FILES" | cut -d= -f2)
-            if [ -n "$TRIGGER_VERSION" ]; then
-              echo "Using version from trigger file: $TRIGGER_VERSION"
-              echo "version=$TRIGGER_VERSION" >> $GITHUB_OUTPUT
-              exit 0
+          # We no longer depend on trigger files, but check them for legacy support
+          if [ -d ".github/triggers" ]; then
+            TRIGGER_FILES=$(find .github/triggers -name "release-*.txt" 2>/dev/null | sort -r | head -n 1)
+            if [ -n "$TRIGGER_FILES" ]; then
+              echo "Found trigger file: $TRIGGER_FILES (for historical reference)"
+              TRIGGER_VERSION=$(grep "VERSION=" "$TRIGGER_FILES" 2>/dev/null | cut -d= -f2)
+              if [ -n "$TRIGGER_VERSION" ]; then
+                echo "Trigger file contains version: $TRIGGER_VERSION (not using)"
+              fi
             fi
           fi
           
@@ -175,30 +174,27 @@ jobs:
             exit 0
           fi
           
-          # For push events, check if package.json version changed
+          # For push events - check for version change in the most recent commits
           if [ "${{ github.event_name }}" = "push" ]; then
-            # For direct pushes to main that modify package.json
-            echo "This is a push event - checking if version changed"
+            echo "This is a push event - checking recent version changes"
             
-            # Compare with previous commit
-            if ! git diff HEAD^ HEAD --name-only | grep -q "package.json"; then
-              echo "package.json was not changed in this commit - skipping release"
+            # Check existing GitHub releases
+            export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            
+            # Get current version from package.json
+            CURRENT_VERSION=$(jq -r '.version' package.json)
+            echo "Current version in package.json: $CURRENT_VERSION"
+            
+            # Check if this version already has a release
+            if gh release view "v$CURRENT_VERSION" &> /dev/null; then
+              echo "Release v$CURRENT_VERSION already exists - skipping release creation"
               echo "proceed=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             
-            OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version' || echo "unknown")
-            echo "Previous version: $OLD_VERSION"
-            NEW_VERSION=$(jq -r '.version' package.json)
-            echo "Current version: $NEW_VERSION"
-            
-            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-              echo "Version changed from $OLD_VERSION to $NEW_VERSION - proceeding with release"
-              echo "proceed=true" >> $GITHUB_OUTPUT
-            else
-              echo "Version unchanged ($OLD_VERSION = $NEW_VERSION) - skipping release"
-              echo "proceed=false" >> $GITHUB_OUTPUT
-            fi
+            # If we've reached here, we have a version that needs releasing
+            echo "Version $CURRENT_VERSION has no existing GitHub release - proceeding with release"
+            echo "proceed=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -355,7 +351,7 @@ jobs:
 
   release:
     needs: [check-version, build, generate-sbom, create-release-notes]
-    if: needs.check-version.outputs.proceed == 'true' && !cancelled() && !failure()
+    if: always() && needs.check-version.outputs.proceed == 'true' && !cancelled() && !failure()
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Needed for creating releases
