@@ -17,7 +17,17 @@ on:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
 
-  # Only triggered when auto-version-bump workflow completes successfully
+  # Trigger on pushes to main that modify package.json or trigger files
+  # This catches the commits made by the auto-version-bump workflow
+  push:
+    branches:
+      - main
+    paths:
+      - 'package.json'
+      - '.github/triggers/**'
+
+  # Also triggered when auto-version-bump workflow completes successfully
+  # This is a backup trigger method
   workflow_run:
     workflows:
       - "Auto Version Bump"
@@ -199,7 +209,41 @@ jobs:
             exit 0
           fi
 
-          # We no longer handle push events directly - they must go through auto-version-bump
+          # For push events - check if this is a version bump commit
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "This is a push event - checking if it's a version bump commit"
+
+            # Check the commit message to see if it's from the auto-version-bump workflow
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            echo "Last commit message: $COMMIT_MSG"
+
+            if [[ "$COMMIT_MSG" == *"Bump version to"* || "$COMMIT_MSG" == *"trigger: release version"* ]]; then
+              echo "This appears to be a version bump commit"
+
+              # Check existing GitHub releases
+              export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+
+              # Get current version from package.json
+              CURRENT_VERSION=$(jq -r '.version' package.json)
+              echo "Current version in package.json: $CURRENT_VERSION"
+
+              # Check if this version already has a release
+              if gh release view "v$CURRENT_VERSION" &> /dev/null; then
+                echo "Release v$CURRENT_VERSION already exists - skipping release creation"
+                echo "proceed=false" >> $GITHUB_OUTPUT
+                exit 0
+              fi
+
+              # If we've reached here, we have a version that needs releasing
+              echo "Version $CURRENT_VERSION has no existing GitHub release - proceeding with release"
+              echo "proceed=true" >> $GITHUB_OUTPUT
+              exit 0
+            else
+              echo "This does not appear to be a version bump commit - skipping release"
+              echo "proceed=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
 
           # Default fallback
           echo "Unknown event type - proceeding with release as fallback"
