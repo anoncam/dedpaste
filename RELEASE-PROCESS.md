@@ -115,11 +115,31 @@ If the automated process fails:
    - Version conflicts
    - npm publishing issues
 
-In case of problems, you can manually trigger the test workflow:
+In case of problems, you can manually trigger the release workflow:
 
-1. Go to Actions → "Test Release" workflow
+1. Go to Actions → "Release with SBOM and Notes" workflow
 2. Click "Run workflow"
-3. This will test the release process without actually publishing
+3. Optionally specify a version to force a release
+4. This will create a new release even if automated triggers are not working
+
+#### Investigating Version Discrepancies
+
+If there's a disconnect between the package.json version and the latest GitHub release:
+
+1. **Check workflow runs**:
+   ```bash
+   gh run list --workflow=release-with-sbom.yml
+   ```
+
+2. **Force a release of the current version**:
+   - Go to Actions → "Release with SBOM and Notes" workflow 
+   - Click "Run workflow"
+   - Enter the current version from package.json in the "force_version" field
+   - Click "Run workflow"
+
+3. **Verify permissions**:
+   - Ensure the GitHub Actions have proper permissions to create releases
+   - The workflow needs `contents: write` permission
 
 ## Version Numbering Conventions
 
