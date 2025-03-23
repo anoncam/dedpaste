@@ -9,13 +9,10 @@ on:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
   
-  # Triggered by package.json changes or release trigger files
+  # Run this workflow on EVERY merge to main to check for release conditions
   push:
     branches:
       - main
-    paths:
-      - 'package.json'
-      - '.github/triggers/**'
   
   # Also triggered when auto-version-bump workflow completes successfully
   workflow_run:
@@ -175,30 +172,27 @@ jobs:
             exit 0
           fi
           
-          # For push events, check if package.json version changed
+          # For push events - check for version change in the most recent commits
           if [ "${{ github.event_name }}" = "push" ]; then
-            # For direct pushes to main that modify package.json
-            echo "This is a push event - checking if version changed"
+            echo "This is a push event - checking recent version changes"
             
-            # Compare with previous commit
-            if ! git diff HEAD^ HEAD --name-only | grep -q "package.json"; then
-              echo "package.json was not changed in this commit - skipping release"
+            # Check existing GitHub releases
+            export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            
+            # Get current version from package.json
+            CURRENT_VERSION=$(jq -r '.version' package.json)
+            echo "Current version in package.json: $CURRENT_VERSION"
+            
+            # Check if this version already has a release
+            if gh release view "v$CURRENT_VERSION" &> /dev/null; then
+              echo "Release v$CURRENT_VERSION already exists - skipping release creation"
               echo "proceed=false" >> $GITHUB_OUTPUT
               exit 0
             fi
             
-            OLD_VERSION=$(git show HEAD^:package.json | jq -r '.version' || echo "unknown")
-            echo "Previous version: $OLD_VERSION"
-            NEW_VERSION=$(jq -r '.version' package.json)
-            echo "Current version: $NEW_VERSION"
-            
-            if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
-              echo "Version changed from $OLD_VERSION to $NEW_VERSION - proceeding with release"
-              echo "proceed=true" >> $GITHUB_OUTPUT
-            else
-              echo "Version unchanged ($OLD_VERSION = $NEW_VERSION) - skipping release"
-              echo "proceed=false" >> $GITHUB_OUTPUT
-            fi
+            # If we've reached here, we have a version that needs releasing
+            echo "Version $CURRENT_VERSION has no existing GitHub release - proceeding with release"
+            echo "proceed=true" >> $GITHUB_OUTPUT
             exit 0
           fi
           
@@ -355,7 +349,7 @@ jobs:
 
   release:
     needs: [check-version, build, generate-sbom, create-release-notes]
-    if: needs.check-version.outputs.proceed == 'true' && !cancelled() && !failure()
+    if: always() && needs.check-version.outputs.proceed == 'true' && !cancelled() && !failure()
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Needed for creating releases
