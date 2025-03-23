@@ -32,7 +32,7 @@ jobs:
       proceed: ${{ steps.check.outputs.proceed }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for release notes
           ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
@@ -180,13 +180,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for release notes
           ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
       
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           registry-url: 'https://registry.npmjs.org'
@@ -205,7 +205,7 @@ jobs:
         run: npm test || echo "Tests skipped"
       
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: dist/
@@ -216,10 +216,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
       
@@ -234,7 +234,7 @@ jobs:
           format: json
       
       - name: Upload SBOM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: ./bom.json
@@ -247,7 +247,7 @@ jobs:
       release_notes: ${{ steps.generate-notes.outputs.notes }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
       
@@ -306,7 +306,7 @@ jobs:
           echo "notes=$NOTES" >> $GITHUB_OUTPUT
       
       - name: Upload release notes
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-notes
           path: RELEASE_NOTES.md
@@ -320,7 +320,7 @@ jobs:
       id-token: write  # Needed for npm provenance
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       - name: Set version for release
         id: version
@@ -337,19 +337,19 @@ jobs:
           echo "========================================"
       
       - name: Download build artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: build-artifacts
           path: dist/
       
       - name: Download SBOM
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: sbom
           path: ./
       
       - name: Download release notes
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: release-notes
           path: ./
@@ -378,7 +378,7 @@ jobs:
           ls -la dist/ || echo "Dist directory not found!"
       
       - name: Setup Node.js for publishing
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           registry-url: 'https://registry.npmjs.org'
