@@ -1,8 +1,7 @@
 name: Release with SBOM and Notes
 
-# This workflow runs on all pushes to main and checks if a release needs to be created.
-# It compares the current package.json version with existing GitHub releases,
-# and only creates a new release if one doesn't already exist for that version.
+# This workflow creates GitHub releases and publishes to NPM after a version bump.
+# It is triggered only by the auto-version-bump workflow or manual dispatch.
 
 # Default permissions for all jobs
 permissions:
@@ -11,18 +10,14 @@ permissions:
   id-token: write  # Needed for npm provenance
 
 on:
+  # Allow manual triggering for specific versions
   workflow_dispatch:
     inputs:
       force_version:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
 
-  # Run this workflow on EVERY push to main to check for release conditions
-  push:
-    branches:
-      - main
-
-  # Also triggered when auto-version-bump workflow completes successfully
+  # Only triggered when auto-version-bump workflow completes successfully
   workflow_run:
     workflows:
       - "Auto Version Bump"
@@ -204,29 +199,7 @@ jobs:
             exit 0
           fi
 
-          # For push events - check for version change in the most recent commits
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "This is a push event - checking recent version changes"
-
-            # Check existing GitHub releases
-            export GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-
-            # Get current version from package.json
-            CURRENT_VERSION=$(jq -r '.version' package.json)
-            echo "Current version in package.json: $CURRENT_VERSION"
-
-            # Check if this version already has a release
-            if gh release view "v$CURRENT_VERSION" &> /dev/null; then
-              echo "Release v$CURRENT_VERSION already exists - skipping release creation"
-              echo "proceed=false" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-
-            # If we've reached here, we have a version that needs releasing
-            echo "Version $CURRENT_VERSION has no existing GitHub release - proceeding with release"
-            echo "proceed=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          # We no longer handle push events directly - they must go through auto-version-bump
 
           # Default fallback
           echo "Unknown event type - proceeding with release as fallback"
