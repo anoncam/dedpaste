@@ -323,7 +323,7 @@ jobs:
 
   release:
     needs: [check-version, build, generate-sbom, create-release-notes]
-    if: needs.check-version.outputs.proceed == 'true'
+    if: needs.check-version.outputs.proceed == 'true' && !cancelled() && !failure()
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Needed for creating releases
