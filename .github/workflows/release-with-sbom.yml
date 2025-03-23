@@ -199,7 +199,17 @@ jobs:
           echo "Working with version: ${{ needs.check-version.outputs.version }}"
       
       - name: Build project
-        run: npm run build
+        run: |
+          echo "TypeScript version:"
+          npx tsc --version
+          
+          echo "Checking for workers-types package:"
+          npm list @cloudflare/workers-types || true
+          
+          echo "Building project with verbose TypeScript output..."
+          npx tsc --listEmittedFiles
+          npx tsc -p tsconfig.cli.json --listEmittedFiles
+          npm run build:tailwind
       
       - name: Run tests
         run: npm test || echo "Tests skipped"
@@ -404,6 +414,15 @@ jobs:
         run: |
           echo "Version in package.json before publishing:"
           cat package.json | grep version
+          
+          # Make sure all dependencies are installed correctly (including dev dependencies)
+          echo "Reinstalling dependencies to ensure build works"
+          npm ci
+          
+          # Verify TypeScript is working
+          echo "Checking TypeScript config"
+          npx tsc --version
+          npx tsc --listFiles
           
           echo "Publishing to NPM with provenance and SBOM metadata"
           npm publish --provenance
