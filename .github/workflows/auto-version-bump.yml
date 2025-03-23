@@ -16,7 +16,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -102,7 +102,7 @@ jobs:
           fi
       
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
       
@@ -147,12 +147,14 @@ jobs:
           echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }} (${{ steps.check-label.outputs.bump_type }} bump)"
           echo "🚀 The release-with-sbom workflow will be triggered automatically by this change."
       
-      # Note: We won't use repository-dispatch as it requires a PAT
-      # The workflow_run trigger in release-with-sbom.yml should handle this automatically
-      # If you need repository-dispatch in the future, use a PAT:
-      # - name: Trigger release workflow
-      #   uses: peter-evans/repository-dispatch@v2
-      #   with:
-      #     token: ${{ secrets.REPO_ACCESS_TOKEN }} # This would need to be created and added to repo secrets
-      #     event-type: version-bumped
-      #     client-payload: '{"version": "${{ steps.bump-version.outputs.new_version }}", "bump_type": "${{ steps.check-label.outputs.bump_type }}", "pr_number": "${{ github.event.pull_request.number }}", "pr_title": "${{ github.event.pull_request.title }}"}'
+      # Explicitly trigger the release workflow with the new version
+      - name: Trigger release workflow
+        run: |
+          # Allow a moment for push to complete
+          sleep 5
+          
+          # Trigger the release workflow with the new version
+          echo "Directly triggering release-with-sbom workflow..."
+          gh workflow run release-with-sbom.yml -f force_version=${{ steps.bump-version.outputs.new_version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
