@@ -175,29 +175,17 @@ jobs:
       - name: Output summary
         run: |
           echo "✅ Version bumped to ${{ steps.bump-version.outputs.new_version }} (${{ steps.check-label.outputs.bump_type }} bump)"
-          echo "🚀 The release-with-sbom workflow will be triggered automatically by this change."
+          echo "🚀 The release-with-sbom workflow will be triggered directly."
+          
+      - name: Trigger release workflow
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: trigger-release
+          client-payload: '{"version": "${{ steps.bump-version.outputs.new_version }}", "bump_type": "${{ steps.check-label.outputs.bump_type }}"}'
 
-      # Add a special commit file to trigger the release workflow
-      - name: Create release trigger file
+      - name: Debug workflow information
         run: |
-          # Create a special file to trigger the release workflow with timestamp to ensure uniqueness
-          echo "Creating trigger file for release..."
-          mkdir -p .github/triggers
-          TIMESTAMP=$(date +%s)
-
-          # Use version and timestamp to ensure file is always unique
-          echo "VERSION=${{ steps.bump-version.outputs.new_version }}" > .github/triggers/release-${{ steps.bump-version.outputs.new_version }}-${TIMESTAMP}.txt
-
-          # Commit and push the trigger file
-          git add .github/triggers/
-          git commit -m "trigger: release version ${{ steps.bump-version.outputs.new_version }} [${TIMESTAMP}]"
-
-          echo "Pushing changes to trigger release workflow..."
-          git push
-
-          echo "Release trigger committed and pushed. The release workflow should start automatically."
-
-          # Debug information about the workflow
           echo "========== WORKFLOW DEBUG INFO =========="
           echo "Workflow name: ${{ github.workflow }}"
           echo "Job name: ${{ github.job }}"

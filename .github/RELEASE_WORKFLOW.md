@@ -4,15 +4,29 @@ This document explains how the automated release workflow operates and how to se
 
 ## How It Works
 
-The automated release workflow is triggered when:
-1. A PR that changes the version in `package.json` is merged to `main`
-2. The `package.json` file is directly changed on the `main` branch
+The automated release workflow consists of two main parts:
 
-When triggered, the workflow:
-1. Compares the old and new version in `package.json`
-2. If a version change is detected, it runs the build and test process
-3. Creates a GitHub release with the new version number
-4. Publishes the package to npm with provenance
+1. **Auto Version Bump Workflow**:
+   - Triggered when a PR is merged to `main`
+   - Analyzes PR labels, title, and commits to determine version bump type (major, minor, patch)
+   - Updates the version in `package.json` and commits the change to `main`
+   - Directly triggers the Release workflow using repository_dispatch event
+
+2. **Release Workflow**:
+   - Triggered through multiple mechanisms (in order of preference):
+     - Direct repository_dispatch event from the Auto Version Bump workflow
+     - The `package.json` file is changed on the `main` branch (fallback)
+     - The Auto Version Bump workflow completes successfully (backup)
+     - Manually triggered via GitHub Actions UI
+
+   When triggered, the workflow:
+   - Verifies the version in `package.json` doesn't already have a release
+   - Builds and tests the package
+   - Generates a Software Bill of Materials (SBOM)
+   - Creates detailed release notes
+   - Creates a GitHub release with the new version tag
+   - Attaches the SBOM to the GitHub release
+   - Publishes the package to npm with provenance
 
 ## Setting Up the Workflow
 
@@ -46,7 +60,53 @@ These permissions are already configured in the workflow file.
 
 ## Creating a Release
 
-To create a new release:
+There are two ways to create a new release:
+
+### Method 1: Automated Version Bumping (Recommended)
+
+1. Create a feature branch and make your changes:
+   ```bash
+   git checkout -b feature/my-feature
+   # Make your changes
+   ```
+
+2. Use conventional commit messages when possible:
+   ```bash
+   # For minor version bump (new feature)
+   git commit -m "feat: add new feature"
+   
+   # For patch version bump (bug fix)
+   git commit -m "fix: resolve issue with X"
+   
+   # For major version bump (breaking change)
+   git commit -m "feat!: completely redesign API"
+   # or
+   git commit -m "BREAKING CHANGE: redesign API"
+   ```
+
+3. Create a Pull Request to `main` with an appropriate title:
+   - Use conventional commit format in the PR title when possible
+   - Optionally add a label to explicitly set the version bump type:
+     - `major`: For breaking changes
+     - `minor`: For new features (backward compatible)
+     - `patch`: For bug fixes, documentation updates, etc.
+
+4. When the PR is merged, the auto-version-bump workflow will:
+   - Determine the appropriate version bump based on PR labels, title, or commits
+   - Update the version in `package.json`
+   - Commit the change to `main`
+   - Trigger the release workflow
+
+5. The release workflow will automatically:
+   - Build the package
+   - Run tests
+   - Generate an SBOM
+   - Create a GitHub release with detailed notes
+   - Publish to npm with provenance
+
+### Method 2: Manual Version Update
+
+If you need to set a specific version:
 
 1. Update the version in `package.json` following Semantic Versioning:
    - MAJOR: Breaking changes
@@ -63,7 +123,7 @@ To create a new release:
 
 3. Create a Pull Request to `main` and merge it.
 
-4. The workflow will automatically:
+4. The release workflow will automatically:
    - Detect the version change
    - Build the package
    - Run tests

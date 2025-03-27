@@ -37,7 +37,11 @@ The project includes an automated workflow that:
    - Commits the change back to the `main` branch with the PR reference
 
 4. **Release Workflow**
-   - The version change in `package.json` triggers the `release-with-sbom.yml` workflow
+   - The auto-version-bump workflow directly triggers the release workflow using a repository_dispatch event
+   - Multiple fallback triggers are in place to ensure reliability:
+     - The version change in `package.json` triggers the workflow (fallback)
+     - The successful completion of the auto-version-bump workflow (backup)
+   - Package.json is the single source of truth for version information
    - This workflow:
      - Builds and tests the package
      - Generates a comprehensive SBOM using CycloneDX
