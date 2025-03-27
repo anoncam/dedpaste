@@ -17,14 +17,18 @@ on:
         description: 'Force release of specific version (leave empty to use package.json)'
         required: false
 
-  # Trigger on pushes to main that modify package.json or trigger files
+  # Direct trigger from auto-version-bump workflow
+  repository_dispatch:
+    types: [trigger-release]
+
+  # Trigger on pushes to main that modify package.json
   # This catches the commits made by the auto-version-bump workflow
+  # and serves as a fallback mechanism
   push:
     branches:
       - main
     paths:
       - 'package.json'
-      - '.github/triggers/**'
 
   # Also triggered when auto-version-bump workflow completes successfully
   # This is a backup trigger method
@@ -84,14 +88,13 @@ jobs:
           echo "Recent commits on main:"
           git log -n 5 --pretty=format:"%h %s"
 
-          echo "Checking for trigger files:"
-          find .github -type f -name "*.txt" 2>/dev/null || echo "No trigger files found"
+          # Package.json is now the sole source of version information
 
           echo "Package.json version:"
           cat package.json | grep version || echo "Could not find version in package.json"
           echo "========================================"
 
-      - name: Get version from package.json or trigger file
+      - name: Get version from package.json
         id: get-version
         run: |
           # First check if we're using a forced version from workflow_dispatch
@@ -102,19 +105,17 @@ jobs:
             exit 0
           fi
 
-          # We no longer depend on trigger files, but check them for legacy support
-          if [ -d ".github/triggers" ]; then
-            TRIGGER_FILES=$(find .github/triggers -name "release-*.txt" 2>/dev/null | sort -r | head -n 1)
-            if [ -n "$TRIGGER_FILES" ]; then
-              echo "Found trigger file: $TRIGGER_FILES (for historical reference)"
-              TRIGGER_VERSION=$(grep "VERSION=" "$TRIGGER_FILES" 2>/dev/null | cut -d= -f2)
-              if [ -n "$TRIGGER_VERSION" ]; then
-                echo "Trigger file contains version: $TRIGGER_VERSION (not using)"
-              fi
+          # Check if this is a repository_dispatch event with version in payload
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            DISPATCH_VERSION="${{ github.event.client_payload.version }}"
+            if [ -n "$DISPATCH_VERSION" ]; then
+              echo "Using version from repository dispatch: $DISPATCH_VERSION"
+              echo "version=$DISPATCH_VERSION" >> $GITHUB_OUTPUT
+              exit 0
             fi
           fi
 
-          # Otherwise get version from package.json
+          # Get version from package.json
           if [ -f "package.json" ]; then
             VERSION=$(jq -r '.version' package.json)
             echo "Current version in package.json: $VERSION"
@@ -164,6 +165,17 @@ jobs:
             echo "Manual workflow trigger - proceeding with release"
             echo "proceed=true" >> $GITHUB_OUTPUT
             exit 0
+          fi
+
+          # For repository_dispatch events from auto-version-bump workflow
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "Processing repository_dispatch event with type: ${{ github.event.action }}"
+            
+            if [ "${{ github.event.action }}" = "trigger-release" ]; then
+              echo "Direct trigger from auto-version-bump workflow - proceeding with release"
+              echo "proceed=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
           fi
 
           # Check if release already exists
@@ -217,7 +229,7 @@ jobs:
             COMMIT_MSG=$(git log -1 --pretty=%B)
             echo "Last commit message: $COMMIT_MSG"
 
-            if [[ "$COMMIT_MSG" == *"Bump version to"* || "$COMMIT_MSG" == *"trigger: release version"* ]]; then
+            if [[ "$COMMIT_MSG" == *"Bump version to"* ]]; then
               echo "This appears to be a version bump commit"
 
               # Check existing GitHub releases
