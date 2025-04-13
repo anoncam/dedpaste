@@ -204,7 +204,20 @@ dedpaste get AbCdEfGh
 dedpaste get https://paste.d3d.dev/e/AbCdEfGh --key-file /path/to/private.pem
 ```
 
+## Documentation
+
+Documentation for DedPaste is organized in the `docs/` directory:
+
+- [Contributing Guide](docs/CONTRIBUTING.md) - How to contribute to the project
+- [Release Process](docs/RELEASE-PROCESS.md) - How releases are managed
+- [Testing Guide](docs/TESTING.md) - How to test the application
+- [Encryption Implementation Plan](docs/encryption-implementation-plan.md) - Details on the encryption design
+- [Encryption Implementation Summary](docs/encryption-implementation-summary.md) - Overview of encryption features
+- [Shell Completion](docs/completion/README.md) - Documentation for shell completion scripts
+
 ## Troubleshooting
+
+For detailed troubleshooting information, please see the [Troubleshooting Guide](docs/troubleshooting.md).
 
 ### Common Errors and Solutions
 
@@ -220,60 +233,6 @@ dedpaste get https://paste.d3d.dev/e/AbCdEfGh --key-file /path/to/private.pem
   **Solution**: Make sure you've added the recipient's PGP key first:
   ```bash
   dedpaste keys --pgp-key user@example.com
-  ```
-
-- **Error**: `Invalid PGP key format`
-  **Solution**: Ensure you're using a properly formatted PGP key. Try:
-  ```bash
-  dedpaste keys --pgp-key user@example.com --debug
-  ```
-
-#### Key Management Issues
-
-- **Error**: `No personal key found. Generate one with --gen-key first.`
-  **Solution**: Run the command to generate your key pair:
-  ```bash
-  dedpaste keys --gen-key
-  ```
-
-- **Error**: `Friend 'name' not found in key database`
-  **Solution**: Add the friend's key first:
-  ```bash
-  dedpaste keys --add-friend name --key-file path/to/key.pem
-  ```
-
-- **Error**: `This paste was encrypted for X, not for you`
-  **Solution**: Only the intended recipient can decrypt the message
-
-#### CLI Parameter Issues
-
-- **Error**: `File not found` when using `--file`
-  **Solution**: Double-check the file path and ensure it exists. For paths with spaces, use quotes:
-  ```bash
-  dedpaste --file "path/to/my file.txt"
-  ```
-
-- **Error**: `--for is required when using --pgp`
-  **Solution**: PGP encryption always requires a recipient:
-  ```bash
-  dedpaste send --encrypt --for recipient@example.com --pgp
-  ```
-
-### Debugging Tips
-
-- Use `--debug` flag to see more detailed information:
-  ```bash
-  dedpaste send --encrypt --for alice --debug
-  ```
-
-- Check key database status:
-  ```bash
-  dedpaste keys --list
-  ```
-
-- Verify GPG keyring integration:
-  ```bash
-  dedpaste keys --list-gpg
   ```
 
 ## Security Considerations
