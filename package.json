@@ -57,7 +57,7 @@
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.2",
-    "wrangler": "^3.113.0"
+    "wrangler": "^4.20.0"
   },
   "dependencies": {
     "clipboardy": "^4.0.0",
