@@ -62,7 +62,7 @@
   "dependencies": {
     "clipboardy": "^4.0.0",
     "commander": "^13.1.0",
-    "inquirer": "^9.2.15",
+    "inquirer": "^12.9.3",
     "keybase-api": "^0.0.1",
     "mime-types": "^2.1.35",
     "node-fetch": "^3.3.2",
