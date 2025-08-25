@@ -62,9 +62,11 @@
     "wrangler": "^4.20.0"
   },
   "dependencies": {
+    "@types/highlight.js": "^9.12.4",
     "@types/marked": "^5.0.2",
     "clipboardy": "^4.0.0",
     "commander": "^13.1.0",
+    "highlight.js": "^11.11.1",
     "inquirer": "^9.2.15",
     "keybase-api": "^0.0.1",
     "marked": "^16.2.0",

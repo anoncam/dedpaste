@@ -1,4 +1,43 @@
 import { marked } from 'marked';
+import hljs from 'highlight.js/lib/core';
+// Import only the languages we want to support to keep bundle size down
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import json from 'highlight.js/lib/languages/json';
+import xml from 'highlight.js/lib/languages/xml'; // HTML, XML
+import css from 'highlight.js/lib/languages/css';
+import markdown from 'highlight.js/lib/languages/markdown';
+import bash from 'highlight.js/lib/languages/bash';
+import yaml from 'highlight.js/lib/languages/yaml';
+import sql from 'highlight.js/lib/languages/sql';
+import java from 'highlight.js/lib/languages/java';
+import cpp from 'highlight.js/lib/languages/cpp';
+import go from 'highlight.js/lib/languages/go';
+import rust from 'highlight.js/lib/languages/rust';
+import ruby from 'highlight.js/lib/languages/ruby';
+import php from 'highlight.js/lib/languages/php';
+
+// Register languages with highlight.js
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('html', xml); // HTML is handled by XML
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('sh', bash); // Shell alias
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('c++', cpp); // C++ alias
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('ruby', ruby);
+hljs.registerLanguage('php', php);
 
 // Define the environment interface for Cloudflare Workers
 type Env = {
@@ -801,10 +840,53 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
  * @returns Complete HTML page with rendered markdown
  */
 async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, filename: string = '', isOneTime: boolean = false): Promise<string> {
-  // Configure marked for security
+  // Create a custom renderer for marked
+  const renderer = new marked.Renderer();
+  let codeBlockId = 0;
+  
+  // Override code block rendering to add syntax highlighting
+  renderer.code = function({ text, lang, escaped }: { text: string; lang?: string; escaped?: boolean }): string {
+    const blockId = `code-block-${++codeBlockId}`;
+    let highlighted: string;
+    let detectedLanguage = lang || 'plaintext';
+    
+    try {
+      if (lang && hljs.getLanguage(lang)) {
+        // Use specified language if it's supported
+        highlighted = hljs.highlight(text, { language: lang }).value;
+      } else {
+        // Auto-detect language
+        const result = hljs.highlightAuto(text);
+        highlighted = result.value;
+        detectedLanguage = result.language || 'plaintext';
+      }
+    } catch (err) {
+      // Fallback to plain text if highlighting fails
+      highlighted = escapeHtml(text);
+      detectedLanguage = 'plaintext';
+    }
+    
+    // Return the highlighted code with a wrapper for the copy button
+    return `<div class="code-block-wrapper">
+      <div class="code-block-header">
+        <span class="code-language">${escapeHtml(detectedLanguage)}</span>
+        <button class="copy-button" data-code-id="${blockId}" onclick="copyCode('${blockId}')" title="Copy code">
+          <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span class="copy-text">Copy</span>
+        </button>
+      </div>
+      <pre><code id="${blockId}" class="hljs language-${escapeHtml(detectedLanguage)}">${highlighted}</code></pre>
+    </div>`;
+  };
+  
+  // Configure marked with our custom renderer
   marked.setOptions({
     breaks: true,
     gfm: true,
+    renderer: renderer,
   });
   
   // Parse the markdown to HTML
@@ -959,13 +1041,70 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
       color: #f3f4f6;
     }
     
+    /* Code block wrapper and header */
+    .code-block-wrapper {
+      position: relative;
+      margin-bottom: 1em;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #4a4952;
+      background: #18171c;
+    }
+    
+    .code-block-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      background: #2c2b31;
+      border-bottom: 1px solid #4a4952;
+    }
+    
+    .code-language {
+      font-size: 0.875rem;
+      color: #8f8fff;
+      font-weight: 500;
+      text-transform: lowercase;
+    }
+    
+    .copy-button {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      background: transparent;
+      border: 1px solid #4a4952;
+      border-radius: 0.25rem;
+      color: #9ca3af;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    
+    .copy-button:hover {
+      background: #4a4952;
+      color: #ffffff;
+      border-color: #8f8fff;
+    }
+    
+    .copy-button.copied {
+      background: #10b981;
+      color: #ffffff;
+      border-color: #10b981;
+    }
+    
+    .copy-icon {
+      width: 14px;
+      height: 14px;
+    }
+    
     .markdown-content pre {
       background: #18171c;
-      border: 1px solid #4a4952;
-      border-radius: 0.5rem;
+      border: none;
+      border-radius: 0;
       padding: 1rem;
       overflow-x: auto;
-      margin-bottom: 1em;
+      margin: 0;
     }
     
     .markdown-content pre code {
@@ -975,6 +1114,99 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
       font-size: 0.875rem;
       line-height: 1.5;
       color: #f3f4f6;
+    }
+    
+    /* Highlight.js theme - GitHub Dark */
+    .hljs {
+      color: #e1e4e8;
+      background: #18171c;
+    }
+    
+    .hljs-doctag,
+    .hljs-keyword,
+    .hljs-meta .hljs-keyword,
+    .hljs-template-tag,
+    .hljs-template-variable,
+    .hljs-type,
+    .hljs-variable.language_ {
+      color: #ff7b72;
+    }
+    
+    .hljs-title,
+    .hljs-title.class_,
+    .hljs-title.class_.inherited__,
+    .hljs-title.function_ {
+      color: #d2a8ff;
+    }
+    
+    .hljs-attr,
+    .hljs-attribute,
+    .hljs-literal,
+    .hljs-meta,
+    .hljs-number,
+    .hljs-operator,
+    .hljs-selector-attr,
+    .hljs-selector-class,
+    .hljs-selector-id,
+    .hljs-variable {
+      color: #79c0ff;
+    }
+    
+    .hljs-meta .hljs-string,
+    .hljs-regexp,
+    .hljs-string {
+      color: #a5d6ff;
+    }
+    
+    .hljs-built_in,
+    .hljs-symbol {
+      color: #ffa657;
+    }
+    
+    .hljs-code,
+    .hljs-comment,
+    .hljs-formula {
+      color: #8b949e;
+    }
+    
+    .hljs-name,
+    .hljs-quote,
+    .hljs-selector-pseudo,
+    .hljs-selector-tag {
+      color: #7ee83f;
+    }
+    
+    .hljs-subst {
+      color: #e1e4e8;
+    }
+    
+    .hljs-section {
+      color: #1f6feb;
+      font-weight: bold;
+    }
+    
+    .hljs-bullet {
+      color: #f2cc60;
+    }
+    
+    .hljs-emphasis {
+      color: #e1e4e8;
+      font-style: italic;
+    }
+    
+    .hljs-strong {
+      color: #e1e4e8;
+      font-weight: bold;
+    }
+    
+    .hljs-addition {
+      color: #aff5b4;
+      background-color: #033a16;
+    }
+    
+    .hljs-deletion {
+      color: #ffdcd7;
+      background-color: #67060c;
     }
     
     .markdown-content blockquote {
@@ -1093,6 +1325,75 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
       <a href="https://paste.d3d.dev">Create New Paste</a>
     </p>
   </footer>
+  
+  <script>
+    function copyCode(blockId) {
+      const codeBlock = document.getElementById(blockId);
+      const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
+      
+      if (!codeBlock || !button) return;
+      
+      // Get the text content without HTML tags
+      const codeText = codeBlock.textContent || codeBlock.innerText;
+      
+      // Create a temporary textarea to copy from
+      const textarea = document.createElement('textarea');
+      textarea.value = codeText;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      
+      try {
+        // Select and copy the text
+        textarea.select();
+        document.execCommand('copy');
+        
+        // Update button state
+        button.classList.add('copied');
+        const copyText = button.querySelector('.copy-text');
+        const originalText = copyText.textContent;
+        copyText.textContent = 'Copied!';
+        
+        // Reset after 2 seconds
+        setTimeout(() => {
+          button.classList.remove('copied');
+          copyText.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy code:', err);
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+    
+    // Alternative modern copy method for browsers that support it
+    if (navigator.clipboard && window.isSecureContext) {
+      window.copyCode = function(blockId) {
+        const codeBlock = document.getElementById(blockId);
+        const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
+        
+        if (!codeBlock || !button) return;
+        
+        const codeText = codeBlock.textContent || codeBlock.innerText;
+        
+        navigator.clipboard.writeText(codeText).then(() => {
+          // Update button state
+          button.classList.add('copied');
+          const copyText = button.querySelector('.copy-text');
+          const originalText = copyText.textContent;
+          copyText.textContent = 'Copied!';
+          
+          // Reset after 2 seconds
+          setTimeout(() => {
+            button.classList.remove('copied');
+            copyText.textContent = originalText;
+          }, 2000);
+        }).catch(err => {
+          console.error('Failed to copy code:', err);
+        });
+      };
+    }
+  </script>
 </body>
 </html>`;
 }
