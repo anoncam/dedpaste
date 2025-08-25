@@ -1,3 +1,5 @@
+import { marked } from 'marked';
+
 // Define the environment interface for Cloudflare Workers
 type Env = {
   PASTE_BUCKET: R2Bucket;
@@ -8,6 +10,7 @@ type PasteMetadata = {
   contentType: string;
   isOneTime: boolean;
   createdAt: number;
+  filename?: string; // Optional filename for detecting markdown files
   // We don't need to store encryption info in metadata
   // since the server doesn't need to know if content is encrypted
   // The URL path (/e/) is sufficient to indicate encryption
@@ -107,14 +110,14 @@ export default {
       const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})$/);
       if (regularMatch) {
         const id = regularMatch[1];
-        return await handleGet(id, env, ctx, false);
+        return await handleGet(id, env, ctx, false, request);
       }
       
       // Handle encrypted pastes
       const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})$/);
       if (encryptedMatch) {
         const id = encryptedMatch[1];
-        return await handleGet(id, env, ctx, true);
+        return await handleGet(id, env, ctx, true, request);
       }
 
       // Try to serve styles.css directly if [site] configuration doesn't work
@@ -507,7 +510,10 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
   });
 }
 
-async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypted: boolean): Promise<Response> {
+async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypted: boolean, request: Request): Promise<Response> {
+  // Check for raw parameter to bypass markdown rendering
+  const url = new URL(request.url);
+  const wantsRaw = url.searchParams.get('raw') === 'true';
   // First, check if this is a one-time paste by trying to get it with the one-time prefix
   const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
   console.log(`[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`);
@@ -563,11 +569,13 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
     // Get the content and metadata before we delete the paste
     const content = await oneTimePaste.arrayBuffer();
     let contentType = 'text/plain';
+    let filename = '';
     
     try {
       const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
       contentType = metadata.contentType || 'text/plain';
-      console.log(`[TEMP PASTE] Content type from metadata: ${contentType}`);
+      filename = metadata.filename || '';
+      console.log(`[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
     } catch (err) {
       console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
     }
@@ -672,6 +680,34 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
       );
     }
     
+    // Check if this is markdown content that should be rendered as HTML
+    const isMarkdown = contentType === 'text/markdown' || 
+                       contentType === 'text/x-markdown' || 
+                       filename.endsWith('.md') ||
+                       filename.endsWith('.markdown');
+    
+    if (isMarkdown && !isEncrypted && !wantsRaw) {
+      // Convert markdown to HTML for browser viewing
+      const textContent = new TextDecoder().decode(content);
+      const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename, true);
+      
+      return new Response(renderedHTML, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'CDN-Cache-Control': 'no-store',
+          'Surrogate-Control': 'no-store',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+          'X-Original-Content-Type': contentType,
+          'X-Rendered-Markdown': 'true',
+          'X-One-Time': 'true',
+          'X-Paste-Viewed-At': new Date().toISOString(),
+        },
+      });
+    }
+    
     // Return the content with stronger cache control headers
     return new Response(content, {
       headers: {
@@ -700,11 +736,13 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
   // Regular paste - get the content and metadata
   const content = await paste.arrayBuffer();
   let contentType = 'text/plain';
+  let filename = '';
   
   try {
     const metadata = paste.customMetadata as unknown as PasteMetadata;
     contentType = metadata.contentType || 'text/plain';
-    console.log(`[REGULAR PASTE] Content type from metadata: ${contentType}`);
+    filename = metadata.filename || '';
+    console.log(`[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
   } catch (err) {
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
   }
@@ -714,6 +752,30 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
   if (isEncrypted && contentType !== 'application/json') {
     console.log(`[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`);
     contentType = 'application/json';
+  }
+  
+  // Check if this is markdown content that should be rendered as HTML
+  const isMarkdown = contentType === 'text/markdown' || 
+                     contentType === 'text/x-markdown' || 
+                     filename.endsWith('.md') ||
+                     filename.endsWith('.markdown');
+  
+  if (isMarkdown && !isEncrypted && !wantsRaw) {
+    // Convert markdown to HTML for browser viewing
+    const textContent = new TextDecoder().decode(content);
+    const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename);
+    
+    return new Response(renderedHTML, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0',
+        'X-Original-Content-Type': contentType,
+        'X-Rendered-Markdown': 'true',
+      },
+    });
   }
   
   // Return the paste content with robust caching headers
@@ -728,4 +790,321 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
       'X-Encrypted': isEncrypted ? 'true' : 'false',
     },
   });
+}
+
+/**
+ * Renders markdown content as HTML with proper styling
+ * @param markdownContent The markdown text to render
+ * @param pasteId The paste ID for display
+ * @param filename Optional filename for display
+ * @param isOneTime Whether this is a one-time paste
+ * @returns Complete HTML page with rendered markdown
+ */
+async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, filename: string = '', isOneTime: boolean = false): Promise<string> {
+  // Configure marked for security
+  marked.setOptions({
+    breaks: true,
+    gfm: true,
+  });
+  
+  // Parse the markdown to HTML
+  const htmlContent = await marked.parse(markdownContent);
+  
+  // Generate a title from the filename or first heading
+  let title = filename || 'Markdown Document';
+  if (title.endsWith('.md')) {
+    title = title.slice(0, -3);
+  } else if (title.endsWith('.markdown')) {
+    title = title.slice(0, -9);
+  }
+  
+  // Try to extract the first heading from the content as title
+  const headingMatch = markdownContent.match(/^#\s+(.+)$/m);
+  if (headingMatch) {
+    title = headingMatch[1];
+  }
+  
+  // Generate the complete HTML page
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(title)} - DedPaste</title>
+  <style>
+    /* Base styles */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #e5e7eb;
+      background: #18171c;
+      padding: 0;
+      margin: 0;
+    }
+    
+    /* Header */
+    .header {
+      background: #2c2b31;
+      border-bottom: 1px solid #4a4952;
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .header-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .header-title .brand {
+      color: #8f8fff;
+    }
+    
+    .paste-info {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      font-size: 0.875rem;
+      color: #9ca3af;
+    }
+    
+    .paste-id {
+      font-family: 'Fira Code', monospace;
+      background: #18171c;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      border: 1px solid #4a4952;
+    }
+    
+    .one-time-badge {
+      background: rgba(207, 102, 121, 0.2);
+      color: #cf6679;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.25rem;
+      font-weight: 500;
+    }
+    
+    /* Main content */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+    
+    .markdown-content {
+      background: #2c2b31;
+      border: 1px solid #4a4952;
+      border-radius: 0.5rem;
+      padding: 2rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Markdown styles */
+    .markdown-content h1,
+    .markdown-content h2,
+    .markdown-content h3,
+    .markdown-content h4,
+    .markdown-content h5,
+    .markdown-content h6 {
+      color: #ffffff;
+      font-weight: 600;
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      line-height: 1.3;
+    }
+    
+    .markdown-content h1:first-child,
+    .markdown-content h2:first-child {
+      margin-top: 0;
+    }
+    
+    .markdown-content h1 { font-size: 2em; border-bottom: 1px solid #4a4952; padding-bottom: 0.3em; }
+    .markdown-content h2 { font-size: 1.5em; border-bottom: 1px solid #4a4952; padding-bottom: 0.3em; }
+    .markdown-content h3 { font-size: 1.25em; }
+    .markdown-content h4 { font-size: 1.1em; }
+    .markdown-content h5 { font-size: 1em; }
+    .markdown-content h6 { font-size: 0.95em; color: #9ca3af; }
+    
+    .markdown-content p {
+      margin-bottom: 1em;
+      line-height: 1.7;
+    }
+    
+    .markdown-content a {
+      color: #8f8fff;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    
+    .markdown-content a:hover {
+      color: #bbc3ff;
+      text-decoration: underline;
+    }
+    
+    .markdown-content code {
+      font-family: 'Fira Code', 'Courier New', monospace;
+      background: #18171c;
+      border: 1px solid #4a4952;
+      padding: 0.125rem 0.25rem;
+      border-radius: 0.25rem;
+      font-size: 0.9em;
+      color: #f3f4f6;
+    }
+    
+    .markdown-content pre {
+      background: #18171c;
+      border: 1px solid #4a4952;
+      border-radius: 0.5rem;
+      padding: 1rem;
+      overflow-x: auto;
+      margin-bottom: 1em;
+    }
+    
+    .markdown-content pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      font-size: 0.875rem;
+      line-height: 1.5;
+      color: #f3f4f6;
+    }
+    
+    .markdown-content blockquote {
+      border-left: 4px solid #8f8fff;
+      padding-left: 1rem;
+      margin: 1em 0;
+      color: #d1d5db;
+      font-style: italic;
+    }
+    
+    .markdown-content ul,
+    .markdown-content ol {
+      margin-bottom: 1em;
+      padding-left: 2rem;
+    }
+    
+    .markdown-content li {
+      margin-bottom: 0.25em;
+    }
+    
+    .markdown-content table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1em;
+      overflow-x: auto;
+      display: block;
+    }
+    
+    .markdown-content th,
+    .markdown-content td {
+      padding: 0.5rem;
+      border: 1px solid #4a4952;
+      text-align: left;
+    }
+    
+    .markdown-content th {
+      background: #18171c;
+      font-weight: 600;
+      color: #ffffff;
+    }
+    
+    .markdown-content tr:nth-child(even) {
+      background: rgba(24, 23, 28, 0.5);
+    }
+    
+    .markdown-content img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 0.5rem;
+      margin: 1em 0;
+    }
+    
+    .markdown-content hr {
+      border: none;
+      border-top: 1px solid #4a4952;
+      margin: 2em 0;
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 2rem;
+      color: #6b7280;
+      font-size: 0.875rem;
+    }
+    
+    .footer a {
+      color: #8f8fff;
+      text-decoration: none;
+    }
+    
+    .footer a:hover {
+      text-decoration: underline;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .header {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+      }
+      
+      .container {
+        padding: 1rem;
+      }
+      
+      .markdown-content {
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="header-title">
+      <span class="brand">Ded</span>Paste - Markdown Viewer
+    </div>
+    <div class="paste-info">
+      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ''}
+      <span class="paste-id">ID: ${escapeHtml(pasteId)}</span>
+      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ''}
+    </div>
+  </header>
+  
+  <main class="container">
+    <div class="markdown-content">
+      ${htmlContent}
+    </div>
+  </main>
+  
+  <footer class="footer">
+    <p>Rendered with <a href="https://github.com/anoncam/dedpaste" target="_blank">DedPaste</a></p>
+    <p style="margin-top: 0.5rem;">
+      <a href="/${pasteId}?raw=true">View Raw</a> • 
+      <a href="https://paste.d3d.dev">Create New Paste</a>
+    </p>
+  </footer>
+</body>
+</html>`;
+}
+
+/**
+ * Escapes HTML special characters to prevent XSS
+ */
+function escapeHtml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
