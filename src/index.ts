@@ -1396,6 +1396,52 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
     }
     
     /* Footer */
+    /* Copy All Button Styles */
+    .copy-all-container {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1rem;
+      padding: 0 1.5rem;
+    }
+    
+    .copy-all-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #2c2b31;
+      border: 1px solid #4a4952;
+      border-radius: 0.5rem;
+      color: #e1e4e8;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+    
+    .copy-all-button:hover {
+      background: #4a4952;
+      border-color: #8f8fff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .copy-all-button:active {
+      transform: translateY(0);
+    }
+    
+    .copy-all-button.copied {
+      background: #10b981;
+      border-color: #10b981;
+      color: #ffffff;
+    }
+    
+    .copy-all-icon {
+      width: 18px;
+      height: 18px;
+    }
+    
     .footer {
       text-align: center;
       padding: 2rem;
@@ -1442,6 +1488,18 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
     </div>
   </header>
   
+  <div class="container">
+    <div class="copy-all-container">
+      <button class="copy-all-button" onclick="copyAllMarkdown()" title="Copy original markdown source">
+        <svg class="copy-all-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+        <span class="copy-all-text">Copy Markdown Source</span>
+      </button>
+    </div>
+  </div>
+  
   <main class="container">
     <div class="markdown-content">
       ${htmlContent}
@@ -1457,6 +1515,57 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
   </footer>
   
   <script>
+    // Store the original markdown content
+    const originalMarkdown = ${JSON.stringify(markdownContent)};
+    
+    // Copy all markdown source to clipboard
+    function copyAllMarkdown() {
+      const button = document.querySelector('.copy-all-button');
+      const buttonText = button.querySelector('.copy-all-text');
+      const originalText = buttonText.textContent;
+      
+      // Create a temporary textarea to copy from
+      const textarea = document.createElement('textarea');
+      textarea.value = originalMarkdown;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      
+      try {
+        // Select and copy the text
+        textarea.select();
+        document.execCommand('copy');
+        
+        // Update button state
+        button.classList.add('copied');
+        buttonText.textContent = 'Copied!';
+        
+        // Reset after 2 seconds
+        setTimeout(() => {
+          button.classList.remove('copied');
+          buttonText.textContent = originalText;
+        }, 2000);
+      } catch (err) {
+        console.error('Failed to copy markdown:', err);
+        // Try modern clipboard API as fallback
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(originalMarkdown).then(() => {
+            button.classList.add('copied');
+            buttonText.textContent = 'Copied!';
+            setTimeout(() => {
+              button.classList.remove('copied');
+              buttonText.textContent = originalText;
+            }, 2000);
+          }).catch(err => {
+            console.error('Clipboard API also failed:', err);
+            alert('Failed to copy markdown. Please try selecting and copying manually.');
+          });
+        }
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+    
     function copyCode(blockId) {
       const codeBlock = document.getElementById(blockId);
       const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
