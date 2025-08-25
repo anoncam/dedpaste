@@ -34,7 +34,7 @@ jobs:
 
           # Determine conventional commit type from PR title or commits
           PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_BODY="${{ github.event.pull_request.body }}"
+          # PR body is not used for version determination, so we don't need to include it
 
           # Simple, robust function to determine bump type from conventional commits
           determine_bump_type() {
@@ -136,7 +136,10 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install dependencies
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install semver globally
         run: npm install -g semver
 
       - name: Bump version
