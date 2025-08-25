@@ -844,9 +844,52 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
   const renderer = new marked.Renderer();
   let codeBlockId = 0;
   
+  // Track if we have any mermaid diagrams
+  let hasMermaidDiagrams = false;
+  let mermaidBlockId = 0;
+  
   // Override code block rendering to add syntax highlighting
   renderer.code = function({ text, lang, escaped }: { text: string; lang?: string; escaped?: boolean }): string {
     const blockId = `code-block-${++codeBlockId}`;
+    
+    // Check if this is a mermaid diagram
+    if (lang === 'mermaid') {
+      hasMermaidDiagrams = true;
+      const mermaidId = `mermaid-${++mermaidBlockId}`;
+      
+      // Return a special wrapper for mermaid diagrams with toggle functionality
+      return `<div class="mermaid-wrapper" id="${mermaidId}-wrapper">
+        <div class="mermaid-header">
+          <span class="code-language">mermaid</span>
+          <div class="mermaid-controls">
+            <button class="toggle-view-button" onclick="toggleMermaidView('${mermaidId}')" title="Toggle code/diagram view">
+              <svg class="toggle-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <span class="toggle-text">View Diagram</span>
+            </button>
+            <button class="copy-button" data-code-id="${blockId}" onclick="copyCode('${blockId}')" title="Copy code">
+              <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span class="copy-text">Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="mermaid-content">
+          <div class="mermaid-code" id="${mermaidId}-code">
+            <pre><code id="${blockId}" class="hljs language-mermaid">${escapeHtml(text)}</code></pre>
+          </div>
+          <div class="mermaid-diagram" id="${mermaidId}-diagram" style="display: none;">
+            <pre class="mermaid">${escapeHtml(text)}</pre>
+          </div>
+        </div>
+      </div>`;
+    }
+    
+    // Regular code block handling
     let highlighted: string;
     let detectedLanguage = lang || 'plaintext';
     
@@ -1217,6 +1260,93 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
       font-style: italic;
     }
     
+    /* Mermaid diagram styles */
+    .mermaid-wrapper {
+      position: relative;
+      margin-bottom: 1em;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 1px solid #4a4952;
+      background: #18171c;
+    }
+    
+    .mermaid-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      background: #2c2b31;
+      border-bottom: 1px solid #4a4952;
+    }
+    
+    .mermaid-controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    
+    .toggle-view-button {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      background: transparent;
+      border: 1px solid #4a4952;
+      border-radius: 0.25rem;
+      color: #9ca3af;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    
+    .toggle-view-button:hover {
+      background: #4a4952;
+      color: #ffffff;
+      border-color: #8f8fff;
+    }
+    
+    .toggle-view-button.active {
+      background: #8f8fff;
+      color: #ffffff;
+      border-color: #8f8fff;
+    }
+    
+    .toggle-icon {
+      width: 14px;
+      height: 14px;
+    }
+    
+    .mermaid-content {
+      position: relative;
+      min-height: 100px;
+    }
+    
+    .mermaid-code pre {
+      margin: 0;
+      background: #18171c;
+      border: none;
+      border-radius: 0;
+    }
+    
+    .mermaid-diagram {
+      padding: 2rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #ffffff;
+      min-height: 200px;
+    }
+    
+    .mermaid-diagram.dark {
+      background: #1e1e2e;
+    }
+    
+    /* Override Mermaid default styles for dark theme */
+    .mermaid-diagram svg {
+      max-width: 100%;
+      height: auto;
+    }
+    
     .markdown-content ul,
     .markdown-content ol {
       margin-bottom: 1em;
@@ -1392,6 +1522,157 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
           console.error('Failed to copy code:', err);
         });
       };
+    }
+    
+    // Toggle between code and diagram view for Mermaid blocks
+    function toggleMermaidView(mermaidId) {
+      const codeView = document.getElementById(mermaidId + '-code');
+      const diagramView = document.getElementById(mermaidId + '-diagram');
+      const button = document.querySelector(\`#\${mermaidId}-wrapper .toggle-view-button\`);
+      const toggleText = button.querySelector('.toggle-text');
+      
+      if (codeView.style.display === 'none') {
+        // Switch to code view
+        codeView.style.display = 'block';
+        diagramView.style.display = 'none';
+        button.classList.remove('active');
+        toggleText.textContent = 'View Diagram';
+      } else {
+        // Switch to diagram view
+        codeView.style.display = 'none';
+        diagramView.style.display = 'block';
+        button.classList.add('active');
+        toggleText.textContent = 'View Code';
+        
+        // Initialize mermaid if not already done
+        if (!window.mermaidInitialized) {
+          loadMermaid();
+        }
+      }
+    }
+    
+    // Load and initialize Mermaid.js
+    function loadMermaid() {
+      if (window.mermaidInitialized) return;
+      
+      // Check if there are any mermaid diagrams
+      const mermaidElements = document.querySelectorAll('.mermaid');
+      if (mermaidElements.length === 0) return;
+      
+      // Load Mermaid.js from CDN
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.textContent = \`
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+        
+        // Configure mermaid for dark theme
+        mermaid.initialize({
+          startOnLoad: true,
+          theme: 'dark',
+          themeVariables: {
+            primaryColor: '#8f8fff',
+            primaryTextColor: '#fff',
+            primaryBorderColor: '#8f8fff',
+            lineColor: '#8f8fff',
+            secondaryColor: '#6c5ce7',
+            tertiaryColor: '#18171c',
+            background: '#2c2b31',
+            mainBkg: '#2c2b31',
+            secondBkg: '#18171c',
+            tertiaryBkg: '#4a4952',
+            primaryTextColor: '#fff',
+            secondaryTextColor: '#fff',
+            tertiaryTextColor: '#fff',
+            lineColor: '#8f8fff',
+            textColor: '#e1e4e8',
+            mainContrastColor: '#e1e4e8',
+            darkMode: true,
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: '14px',
+            altBackground: '#18171c',
+            edgeLabelBackground: '#2c2b31',
+            nodeTextColor: '#e1e4e8',
+            actorBkg: '#8f8fff',
+            actorBorder: '#8f8fff',
+            actorTextColor: '#18171c',
+            actorLineColor: '#e1e4e8',
+            signalColor: '#e1e4e8',
+            signalTextColor: '#e1e4e8',
+            labelBoxBkgColor: '#2c2b31',
+            labelBoxBorderColor: '#8f8fff',
+            labelTextColor: '#e1e4e8',
+            loopTextColor: '#e1e4e8',
+            noteBorderColor: '#8f8fff',
+            noteBkgColor: '#2c2b31',
+            noteTextColor: '#e1e4e8',
+            activationBorderColor: '#8f8fff',
+            activationBkgColor: '#4a4952',
+            sequenceNumberColor: '#18171c',
+            sectionBkgColor: '#4a4952',
+            altSectionBkgColor: '#2c2b31',
+            sectionBkgColor2: '#2c2b31',
+            excludeBkgColor: '#18171c',
+            taskBorderColor: '#8f8fff',
+            taskBkgColor: '#4a4952',
+            taskTextColor: '#e1e4e8',
+            taskTextLightColor: '#e1e4e8',
+            taskTextOutsideColor: '#e1e4e8',
+            taskTextClickableColor: '#8f8fff',
+            activeTaskBorderColor: '#8f8fff',
+            activeTaskBkgColor: '#8f8fff',
+            gridColor: '#4a4952',
+            doneTaskBkgColor: '#10b981',
+            doneTaskBorderColor: '#10b981',
+            critBorderColor: '#ff7b72',
+            critBkgColor: '#ff7b72',
+            todayLineColor: '#ff7b72',
+            personBorder: '#8f8fff',
+            personBkg: '#2c2b31',
+            labelColor: '#e1e4e8',
+            errorBkgColor: '#ff7b72',
+            errorTextColor: '#18171c',
+            clusterBkg: '#2c2b31',
+            clusterBorder: '#8f8fff',
+            defaultLinkColor: '#8f8fff',
+            titleColor: '#e1e4e8',
+            edgeLabelBackground: '#2c2b31',
+            nodeTextColor: '#e1e4e8'
+          },
+          flowchart: {
+            htmlLabels: true,
+            curve: 'basis'
+          },
+          sequence: {
+            diagramMarginX: 50,
+            diagramMarginY: 10,
+            actorMargin: 50,
+            width: 150,
+            height: 65,
+            boxMargin: 10,
+            boxTextMargin: 5,
+            noteMargin: 10,
+            messageMargin: 35,
+            mirrorActors: true,
+            bottomMarginAdj: 1,
+            useMaxWidth: true
+          },
+          er: {
+            layoutDirection: 'TB',
+            minEntityWidth: 100,
+            minEntityHeight: 75,
+            entityPadding: 15,
+            stroke: 'gray',
+            fill: 'honeydew',
+            fontSize: 12
+          }
+        });
+        
+        // Render all mermaid diagrams
+        mermaid.run();
+        window.mermaidInitialized = true;
+      \`;
+      
+      document.body.appendChild(script);
     }
   </script>
 </body>
