@@ -298,7 +298,6 @@ jobs:
           echo "Building project with verbose TypeScript output..."
           npx tsc --listEmittedFiles
           npx tsc -p tsconfig.cli.json --listEmittedFiles
-          npm run build:tailwind
 
       - name: Run tests
         run: npm test || echo "Tests skipped"
