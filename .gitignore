@@ -3,6 +3,12 @@ node_modules/
 
 # TypeScript compiled output
 dist/
+dist-cli/
+cli/**/*.js
+!cli/index.js
+src/**/*.js
+*.js.map
+*.d.ts
 
 # Environment variables
 .env
@@ -37,7 +43,15 @@ yarn-error.log*
 # Cloudflare Worker dev files
 worker-configuration.json
 
-# Ensure CSS build files are not ignored
-!public/styles.css
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+*~
+temp-*
+debug-*.js
+migrate-*.sh
 
-# Test comment for PR workflow testing
+# OS files
+Thumbs.db
