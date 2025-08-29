@@ -1,22 +1,38 @@
-# DedPaste
+# DedPaste 🔐
 
-A secure pastebin CLI application powered by Cloudflare Workers and R2 storage with advanced encryption capabilities.
+A secure, privacy-focused pastebin CLI application powered by Cloudflare Workers and R2 storage with advanced encryption capabilities and a modern Material-UI web interface.
 
-## Features
+## ✨ Features
 
-- Upload plain text or binary files to a pastebin service
-- Get a unique URL that can be shared with others
-- Create one-time pastes that are deleted after first view
-- End-to-end encryption for secure content sharing
-- Support for RSA key pairs (PEM format)
-- Friend-to-friend encryption with key management
-- **PGP encryption and decryption** with keyserver integration
-- **GPG keyring integration** for using system PGP keys
-- **Keybase user integration** with proof verification
-- Advanced interactive mode with rich PGP and GPG support
-- Command-line interface for easy integration with scripts and tools
-- Modern, responsive web interface
-- Comprehensive Software Bill of Materials (SBOM) with each release
+### 🔒 Security & Privacy
+- **End-to-end encryption** - All encryption happens client-side
+- **One-time pastes** - Self-destructing content after first view
+- **PGP/GPG support** - Full integration with existing PGP infrastructure
+- **RSA key pairs** - Support for PEM format keys
+- **Friend-to-friend encryption** - Manage keys for trusted contacts
+- **Keybase integration** - Import keys with proof verification
+- **Zero-knowledge architecture** - Server never sees unencrypted content
+
+### 🛠️ Developer Features
+- **CLI-first design** - Powerful command-line interface
+- **Script integration** - Easy to use in automation workflows
+- **Binary file support** - Upload any file type with proper MIME detection
+- **Interactive key management** - Enhanced mode for complex operations
+- **Multiple encryption methods** - RSA, PGP, symmetric encryption
+- **Markdown rendering** - Automatic syntax highlighting for code
+
+### 🎨 User Interface
+- **Modern Material-UI design** - Clean, responsive web interface
+- **Dark theme** - Easy on the eyes for extended use
+- **Mobile-friendly** - Works great on all devices
+- **Syntax highlighting** - Support for 15+ programming languages
+- **Copy-to-clipboard** - One-click copying of content
+
+### 📦 Infrastructure
+- **Cloudflare Workers** - Global edge deployment
+- **R2 Storage** - Cost-effective object storage
+- **SBOM included** - Software Bill of Materials with each release
+- **TypeScript** - Fully typed for better developer experience
 
 ## Installation
 
@@ -70,7 +86,26 @@ echo 'source ~/.dedpaste-completion.zsh' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-## Usage
+## 🚀 Quick Start
+
+```bash
+# Install globally
+npm install -g dedpaste
+
+# Create your first paste
+echo "Hello, World!" | dedpaste
+
+# Generate encryption keys (one-time setup)
+dedpaste keys --gen-key
+
+# Create an encrypted paste
+echo "Secret message" | dedpaste send --encrypt
+
+# Create a self-destructing paste
+echo "Confidential" | dedpaste send --one-time
+```
+
+## 📖 Usage
 
 DedPaste CLI has six main command modes:
 
@@ -252,28 +287,66 @@ You can configure the CLI using environment variables:
   export DEDPASTE_API_URL="https://your-worker.example.com"
   ```
 
-## UI Development with Tailwind CSS
+## 🎨 UI Development
 
-The web interface uses Tailwind CSS for styling. To set up the UI development environment:
+The web interface uses **Material-UI (MUI)** design system for a modern, responsive experience. The UI features:
 
-1. Run the setup script to install and configure Tailwind CSS:
-   ```bash
-   ./setup-tailwind.sh
-   ```
+- **Dark theme** optimized for readability
+- **Responsive design** that works on all devices
+- **Interactive components** with smooth animations
+- **Syntax highlighting** for code and markdown
+- **Accessibility** built into every component
 
-2. Start the development server with live CSS updates:
-   ```bash
-   npm run dev
-   ```
-   This will automatically watch for changes in your Tailwind CSS files and rebuild them as needed while running the development server.
+### Development
 
-3. When deploying to production, the CSS will be automatically built:
-   ```bash
-   npm run deploy
-   ```
+```bash
+# Start the development server
+npm run dev
 
-Note: The Tailwind CSS files are compiled to the `/public/styles.css` file, which is served by the [site] configuration in `wrangler.toml`.
+# Build for production
+npm run build
 
-## License
+# Deploy to Cloudflare Workers
+npm run deploy
+```
 
-ISC
+## 🔧 Technical Stack
+
+- **Backend**: Cloudflare Workers (Edge computing)
+- **Storage**: Cloudflare R2 (S3-compatible object storage)
+- **UI Framework**: Material-UI with custom theming
+- **Languages**: TypeScript for type safety
+- **Encryption**: RSA, PGP/GPG, AES-256
+- **CLI**: Node.js with Commander.js
+
+## 📦 Releases
+
+Each release includes:
+- Pre-built CLI binaries
+- Comprehensive Software Bill of Materials (SBOM)
+- Detailed release notes
+- NPM package with provenance
+
+View all releases: [GitHub Releases](https://github.com/anoncam/dedpaste/releases)
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+## 🙏 Acknowledgments
+
+- Cloudflare Workers team for the excellent edge platform
+- Material-UI team for the beautiful component library
+- The open-source community for various encryption libraries
+
+---
+
+<p align="center">
+  Made with ❤️ for privacy enthusiasts
+  <br>
+  <a href="https://paste.d3d.dev">paste.d3d.dev</a> • <a href="https://github.com/anoncam/dedpaste">GitHub</a> • <a href="https://www.npmjs.com/package/dedpaste">NPM</a>
+</p>

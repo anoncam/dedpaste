@@ -866,20 +866,33 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
   <div class="MuiDivider"></div>
 
   <main class="MuiContainer py-6">
-    <section class="mb-8">
+    <!-- Hero Section -->
+    <section class="mb-8" style="padding: var(--mui-spacing-8) 0;">
       <div class="text-center mb-6">
-        <h2 class="MuiTypography-h3 mb-2">Secure Pastebin with Advanced Encryption</h2>
-        <p class="MuiTypography-subtitle1" style="color: var(--mui-palette-text-secondary); max-width: 800px; margin: 0 auto;">
-          A powerful CLI tool for sharing text and files with end-to-end encryption, PGP support, and one-time pastes.
+        <h2 class="MuiTypography-h2 mb-3" style="font-weight: 700; background: linear-gradient(135deg, var(--mui-palette-primary-main) 0%, var(--mui-palette-secondary-main) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+          Secure Pastebin with Advanced Encryption
+        </h2>
+        <p class="MuiTypography-h6" style="color: var(--mui-palette-text-secondary); max-width: 800px; margin: 0 auto var(--mui-spacing-4); font-weight: 400;">
+          Share text and files securely with end-to-end encryption, PGP support, and self-destructing pastes.
         </p>
+        <div class="MuiStack MuiStack-row MuiStack-spacing-2" style="justify-content: center; margin-top: var(--mui-spacing-4);">
+          <a href="#install" class="MuiButton MuiButton-contained MuiButton-containedPrimary" style="padding: 12px 32px; font-size: 1.1rem;">
+            Get Started
+          </a>
+          <a href="https://github.com/anoncam/dedpaste#readme" target="_blank" class="MuiButton MuiButton-outlined MuiButton-outlinedPrimary" style="padding: 12px 32px; font-size: 1.1rem;">
+            Documentation
+          </a>
+        </div>
       </div>
 
       <div class="MuiGrid-container MuiGrid-spacing-3">
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation2 MuiCard" style="height: 100%;">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip MuiChip-primary">End-to-End Encryption</span>
+                <span class="MuiChip MuiChip-primary">🔒 End-to-End</span>
               </div>
               <h3 class="MuiTypography-h6">Keep Your Content Private</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
@@ -890,10 +903,12 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation2 MuiCard" style="height: 100%;">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip MuiChip-primary">PGP Integration</span>
+                <span class="MuiChip MuiChip-primary">🔑 PGP Ready</span>
               </div>
               <h3 class="MuiTypography-h6">Use Your Existing Keys</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
@@ -904,10 +919,12 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation2 MuiCard" style="height: 100%;">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip MuiChip-secondary">One-Time Pastes</span>
+                <span class="MuiChip MuiChip-secondary">⏱️ One-Time</span>
               </div>
               <h3 class="MuiTypography-h6">Self-Destructing Content</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
@@ -918,10 +935,12 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation2 MuiCard" style="height: 100%;">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip">Binary Support</span>
+                <span class="MuiChip">📁 Binary Files</span>
               </div>
               <h3 class="MuiTypography-h6">Beyond Just Text</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
@@ -932,10 +951,12 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation2 MuiCard" style="height: 100%;">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip">Friend-to-Friend</span>
+                <span class="MuiChip">👥 Friend Keys</span>
               </div>
               <h3 class="MuiTypography-h6">Secure Sharing</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
@@ -946,10 +967,12 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation2 MuiCard" style="height: 100%;">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip">CLI Power</span>
+                <span class="MuiChip">⚡ CLI Power</span>
               </div>
               <h3 class="MuiTypography-h6">Advanced Scripting</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
@@ -997,28 +1020,40 @@ echo "Hello, World!" | dedpaste
 # Create a paste from a file
 dedpaste send myfile.txt
 
-# Create a one-time paste
+# Create with custom filename
+dedpaste send --filename "readme.md" < README.md
+
+# Create a one-time paste (self-destructs after viewing)
 dedpaste send --one-time secret.txt
 
 # Retrieve a paste
-dedpaste get https://paste.d3d.dev/AbCdEfGh</code></pre>
+dedpaste get https://paste.d3d.dev/AbCdEfGh
+
+# Save retrieved paste to file
+dedpaste get https://paste.d3d.dev/AbCdEfGh -o output.txt</code></pre>
           </div>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-md-6">
           <div class="MuiPaper MuiPaper-elevation2" style="padding: var(--mui-spacing-3); height: 100%;">
-            <h3 class="MuiTypography-h6 mb-2">Encryption</h3>
-            <pre><code># Generate your key pair first
+            <h3 class="MuiTypography-h6 mb-2">Encryption & Security</h3>
+            <pre><code># Generate your key pair (one-time setup)
 dedpaste keys --gen-key
 
 # Encrypt for yourself
 echo "Secret data" | dedpaste send --encrypt
 
-# Encrypt for a friend
-dedpaste send --encrypt --for alice secret.txt
+# Encrypt for a specific friend
+dedpaste send --encrypt --for alice@example.com secret.txt
 
-# Decrypt a paste
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh#key</code></pre>
+# Combine encryption with one-time viewing
+dedpaste send --encrypt --one-time confidential.pdf
+
+# Decrypt a paste (key in URL fragment)
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh#key
+
+# Use PGP encryption
+dedpaste send --encrypt --pgp --for user@example.com data.txt</code></pre>
           </div>
         </div>
         
@@ -1028,31 +1063,45 @@ dedpaste get https://paste.d3d.dev/e/AbCdEfGh#key</code></pre>
             <pre><code># Enhanced interactive key management (recommended)
 dedpaste keys:enhanced
 
-# Standard key management
-dedpaste keys
+# Add a friend's key manually
+dedpaste keys --add alice
 
-# Add a friend's key from Keybase
-dedpaste keys --add alice --keybase alice_username
+# Import from Keybase
+dedpaste keys --add bob --keybase bob_username
+
+# Import PGP key from keyserver
+dedpaste keys --pgp-key alice@example.com
 
 # List all stored keys
 dedpaste keys --list
 
-# Export your public key
-dedpaste keys --export</code></pre>
+# Export your public key for sharing
+dedpaste keys --export
+
+# Remove a friend's key
+dedpaste keys --remove alice</code></pre>
           </div>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-md-6">
           <div class="MuiPaper MuiPaper-elevation2" style="padding: var(--mui-spacing-3); height: 100%;">
-            <h3 class="MuiTypography-h6 mb-2">Retrieving Pastes</h3>
-            <pre><code># Get and display a paste
-dedpaste get https://paste.d3d.dev/AbCdEfGh
+            <h3 class="MuiTypography-h6 mb-2">Advanced Features</h3>
+            <pre><code># Pipe from other commands
+cat logs.txt | grep ERROR | dedpaste send --one-time
 
-# Save to file
-dedpaste get https://paste.d3d.dev/AbCdEfGh -o output.txt
+# Use in scripts
+PASTE_URL=$(echo "Build complete" | dedpaste)
+echo "Results: $PASTE_URL"
 
-# Get encrypted paste (key in URL fragment)
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh#key</code></pre>
+# Binary file support
+dedpaste send image.png
+dedpaste send document.pdf --encrypt
+
+# Set custom expiration (if configured)
+dedpaste send --expire 24h temporary.txt
+
+# Copy to clipboard (requires xclip/pbcopy)
+dedpaste get https://paste.d3d.dev/abc | pbcopy</code></pre>
           </div>
         </div>
       </div>
@@ -1145,17 +1194,29 @@ curl -X POST https://paste.d3d.dev/api/paste \\
 
     <div class="MuiDivider mb-6"></div>
 
-    <footer class="text-center py-4">
-      <div class="MuiStack MuiStack-row MuiStack-spacing-2" style="justify-content: center; margin-bottom: var(--mui-spacing-2);">
-        <a href="https://github.com/anoncam/dedpaste" target="_blank">GitHub</a>
-        <span style="color: var(--mui-palette-text-disabled);">•</span>
-        <a href="https://github.com/anoncam/dedpaste/issues" target="_blank">Report Issue</a>
-        <span style="color: var(--mui-palette-text-disabled);">•</span>
-        <a href="https://github.com/anoncam/dedpaste/blob/main/LICENSE" target="_blank">License</a>
+    <footer class="text-center py-6" style="border-top: 1px solid var(--mui-palette-divider); margin-top: var(--mui-spacing-8); background: var(--mui-palette-background-paper);">
+      <div class="MuiContainer">
+        <div class="MuiStack MuiStack-row MuiStack-spacing-3" style="justify-content: center; margin-bottom: var(--mui-spacing-3);">
+          <a href="https://github.com/anoncam/dedpaste" target="_blank" style="display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon-small" style="margin-right: 4px;">
+              <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+            </svg>
+            GitHub
+          </a>
+          <span style="color: var(--mui-palette-text-disabled);">•</span>
+          <a href="https://www.npmjs.com/package/dedpaste" target="_blank">NPM</a>
+          <span style="color: var(--mui-palette-text-disabled);">•</span>
+          <a href="https://github.com/anoncam/dedpaste/issues" target="_blank">Report Issue</a>
+          <span style="color: var(--mui-palette-text-disabled);">•</span>
+          <a href="https://github.com/anoncam/dedpaste/blob/main/LICENSE" target="_blank">MIT License</a>
+        </div>
+        <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary); margin-bottom: var(--mui-spacing-1);">
+          Version 1.13.2 • © 2024 DedPaste
+        </p>
+        <p class="MuiTypography-caption" style="color: var(--mui-palette-text-disabled);">
+          Built with 🔐 for privacy enthusiasts • Powered by Cloudflare Workers & Material-UI
+        </p>
       </div>
-      <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
-        © 2024 DedPaste. Built with 🔐 for privacy enthusiasts.
-      </p>
     </footer>
   </main>
 </body>
