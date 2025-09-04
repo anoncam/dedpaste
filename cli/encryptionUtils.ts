@@ -210,8 +210,8 @@ export async function decryptContent(
           // If successful, return the result
           if (result && result.content) {
             return {
-              decryptedContent: result.content.toString('utf8'),
-              senderInfo: result.metadata?.senderInfo
+              content: result.content,
+              metadata: result.metadata
             };
           }
         } catch (gpgError: any) {
@@ -268,8 +268,8 @@ export async function decryptContent(
       // Decrypt with PGP using the provided private key
       const result = await decryptPgpMessage(encryptedBuffer, privateKeyContent, pgpPassphrase, false);
       return {
-        decryptedContent: result.content.toString('utf8'),
-        senderInfo: result.metadata?.senderInfo
+        content: result.content,
+        metadata: result.metadata
       };
     } else {
       throw new Error(`Unsupported encryption version: ${(encryptedData as any).version}`);
@@ -319,8 +319,11 @@ async function decryptLegacyContent(encryptedData: EncryptedDataV1): Promise<Dec
   decryptedContent = Buffer.concat([decryptedContent, decipher.final()]);
   
   return {
-    decryptedContent: decryptedContent.toString(),
-    senderInfo: undefined
+    content: Buffer.from(decryptedContent),
+    metadata: {
+      version: 1,
+      recipient: { type: 'self' } as RecipientInfo
+    }
   };
 }
 
@@ -371,7 +374,12 @@ async function decryptV2Content(encryptedData: EncryptedDataV2): Promise<Decrypt
   decryptedContent = Buffer.concat([decryptedContent, decipher.final()]);
   
   return {
-    decryptedContent: decryptedContent.toString(),
-    senderInfo: metadata.recipient
+    content: Buffer.from(decryptedContent),
+    metadata: {
+      version: 2,
+      recipient: metadata.recipient,
+      sender: metadata.sender,
+      timestamp: metadata.timestamp
+    }
   };
 }

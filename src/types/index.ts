@@ -1,4 +1,5 @@
 // Shared type definitions for DedPaste
+/// <reference types="node" />
 
 // Key types
 export interface KeyInfo {
@@ -47,8 +48,21 @@ export interface RecipientInfo {
 }
 
 export interface DecryptionResult {
-  decryptedContent: string;
-  senderInfo?: RecipientInfo;
+  content: Buffer;
+  metadata?: {
+    version?: number;
+    recipient?: RecipientInfo;
+    sender?: string | RecipientInfo;
+    timestamp?: string;
+    pgp?: boolean;
+    decryptedWith?: string;
+    keyId?: string;
+    signature?: {
+      valid?: boolean | null;
+      keyId?: string;
+      created?: string;
+    };
+  };
 }
 
 // Paste types
