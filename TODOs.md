@@ -41,12 +41,12 @@ This document outlines the comprehensive roadmap for enhancing DedPaste into a m
 - [ ] Add service factories and providers
 
 ### 1.3 Error Handling & Validation 🔴 P0
-- [ ] Create custom error classes:
-  - [ ] `ValidationError`
-  - [ ] `AuthenticationError`
-  - [ ] `EncryptionError`
-  - [ ] `StorageError`
-  - [ ] `RateLimitError`
+- [x] Create custom error classes: ✅ COMPLETED
+  - [x] `ValidationError`
+  - [x] `AuthenticationError`
+  - [x] `EncryptionError`
+  - [x] `StorageError`
+  - [x] `RateLimitError`
 - [ ] Implement centralized error handler middleware
 - [ ] Add Zod schemas for request/response validation
 - [ ] Create validation middleware for all endpoints
@@ -201,31 +201,31 @@ This document outlines the comprehensive roadmap for enhancing DedPaste into a m
   - [ ] Create service worker
   - [ ] Optimize bundle size
 
-### 4.3 CI/CD Pipeline 🔴 P0
-- [ ] GitHub Actions workflows
+### 4.3 CI/CD Pipeline 🔴 P0 (Partially Complete)
+- [x] GitHub Actions workflows
   - [ ] Create test workflow
   - [ ] Add build workflow
   - [ ] Implement deployment workflow
   - [ ] Add security scanning
+- [x] Release automation
+  - [x] Semantic versioning (auto-version-bump.yml)
+  - [x] Automated changelog
+  - [x] GitHub releases (release-with-sbom.yml)
+  - [ ] NPM publishing
 - [ ] Automated testing
   - [ ] Unit test coverage >80%
   - [ ] Integration test suite
   - [ ] E2E test automation
   - [ ] Performance benchmarks
-- [ ] Release automation
-  - [ ] Semantic versioning
-  - [ ] Automated changelog
-  - [ ] GitHub releases
-  - [ ] NPM publishing
 
 ---
 
 ## 5. Testing & Quality Assurance
 
-### 5.1 Test Infrastructure 🔴 P0
-- [ ] Unit tests
+### 5.1 Test Infrastructure 🔴 P0 (Partially Complete)
+- [x] Unit tests (Basic infrastructure exists)
   - [ ] Service layer tests
-  - [ ] Encryption utility tests
+  - [x] Encryption utility tests ✅
   - [ ] API endpoint tests
   - [ ] CLI command tests
 - [ ] Integration tests
@@ -241,10 +241,10 @@ This document outlines the comprehensive roadmap for enhancing DedPaste into a m
   - [ ] Stress testing scenarios
   - [ ] Memory leak detection
 
-### 5.2 Code Quality Tools 🔴 P0
-- [ ] Linting and formatting
-  - [ ] Configure ESLint rules
-  - [ ] Set up Prettier
+### 5.2 Code Quality Tools 🔴 P0 (Partially Complete)
+- [x] Linting and formatting
+  - [x] Configure ESLint rules ✅
+  - [x] Set up Prettier ✅
   - [ ] Add pre-commit hooks
   - [ ] Create lint-staged config
 - [ ] Code analysis
