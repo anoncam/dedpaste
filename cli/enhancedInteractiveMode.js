@@ -57,8 +57,7 @@ export async function enhancedKeyManagement() {
             const answers = await inquirer.prompt([{
                     type: 'list',
                     name: 'action',
-                    message: 'DedPaste Key Management',
-                    prefix: chalk.magenta('🔑'),
+                    message: chalk.magenta('🔑') + ' DedPaste Key Management',
                     choices: [
                         { name: chalk.green('List and search keys'), value: 'search' },
                         { name: chalk.green('Add or import key'), value: 'add' },

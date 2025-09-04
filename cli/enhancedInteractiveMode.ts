@@ -245,11 +245,10 @@ export async function enhancedKeyManagement(): Promise<OperationResult> {
     let exitMenu = false;
     
     while (!exitMenu) {
-      const answers: InquirerAnswers = await inquirer.prompt([{
+      const answers = await inquirer.prompt<InquirerAnswers>([{
         type: 'list',
         name: 'action',
-        message: 'DedPaste Key Management',
-        prefix: chalk.magenta('🔑'),
+        message: chalk.magenta('🔑') + ' DedPaste Key Management',
         choices: [
           { name: chalk.green('List and search keys'), value: 'search' },
           { name: chalk.green('Add or import key'), value: 'add' },
@@ -307,7 +306,7 @@ export async function enhancedKeyManagement(): Promise<OperationResult> {
  */
 export async function searchAndListKeys(): Promise<void> {
   try {
-    const answers: InquirerAnswers = await inquirer.prompt([
+    const answers = await inquirer.prompt<InquirerAnswers>([
       {
         type: 'list',
         name: 'searchMode',
@@ -452,7 +451,7 @@ export async function searchAndListKeys(): Promise<void> {
     console.log(chalk.bold.green('\n============================='));
     
     // Ask if user wants to view details of a specific key
-    const detailsAnswer: InquirerAnswers = await inquirer.prompt([{
+    const detailsAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'confirm',
       name: 'viewDetails',
       message: 'Would you like to view details of a specific key?',
@@ -473,7 +472,7 @@ export async function searchAndListKeys(): Promise<void> {
  */
 export async function addOrImportKey(): Promise<void> {
   try {
-    const sourceAnswer: InquirerAnswers = await inquirer.prompt([{
+    const sourceAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'list',
       name: 'importSource',
       message: 'How would you like to add a key?',
@@ -492,7 +491,7 @@ export async function addOrImportKey(): Promise<void> {
     // Handle different import sources
     switch (sourceAnswer.importSource) {
       case 'file': {
-        const fileAnswers: InquirerAnswers = await inquirer.prompt([
+        const fileAnswers = await inquirer.prompt<InquirerAnswers>([
           {
             type: 'input',
             name: 'filePath',
@@ -517,7 +516,7 @@ export async function addOrImportKey(): Promise<void> {
       }
       
       case 'pgp-server': {
-        const pgpAnswers: InquirerAnswers = await inquirer.prompt([
+        const pgpAnswers = await inquirer.prompt<InquirerAnswers>([
           {
             type: 'input',
             name: 'identifier',
@@ -543,7 +542,7 @@ export async function addOrImportKey(): Promise<void> {
       }
       
       case 'keybase': {
-        const keybaseAnswers: InquirerAnswers = await inquirer.prompt([
+        const keybaseAnswers = await inquirer.prompt<InquirerAnswers>([
           {
             type: 'input',
             name: 'username',
@@ -596,7 +595,7 @@ export async function addOrImportKey(): Promise<void> {
           return;
         }
         
-        const gpgAnswers: InquirerAnswers = await inquirer.prompt([
+        const gpgAnswers = await inquirer.prompt<InquirerAnswers>([
           {
             type: 'list',
             name: 'keyId',
@@ -617,7 +616,7 @@ export async function addOrImportKey(): Promise<void> {
       }
       
       case 'gpg-import': {
-        const gpgImportAnswers: InquirerAnswers = await inquirer.prompt([{
+        const gpgImportAnswers = await inquirer.prompt<InquirerAnswers>([{
           type: 'editor',
           name: 'content',
           message: 'Paste the PGP key to import to GPG keyring:',
@@ -635,7 +634,7 @@ export async function addOrImportKey(): Promise<void> {
       }
       
       case 'paste': {
-        const pasteAnswers: InquirerAnswers = await inquirer.prompt([
+        const pasteAnswers = await inquirer.prompt<InquirerAnswers>([
           {
             type: 'editor',
             name: 'content',
@@ -708,7 +707,7 @@ export async function addOrImportKey(): Promise<void> {
  */
 export async function generateNewKey(): Promise<void> {
   try {
-    const confirmAnswer: InquirerAnswers = await inquirer.prompt([{
+    const confirmAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'confirm',
       name: 'confirm',
       message: 'Generate a new RSA key pair? This will overwrite your existing self key if present.',
@@ -728,7 +727,7 @@ export async function generateNewKey(): Promise<void> {
       console.log(`- ${chalk.green('Public key:')} ${result.publicKeyPath || 'Unknown'}`);
       
       // Offer to back up the key
-      const backupAnswer: InquirerAnswers = await inquirer.prompt([{
+      const backupAnswer = await inquirer.prompt<InquirerAnswers>([{
         type: 'confirm',
         name: 'backup',
         message: 'Would you like to export your keys to a backup location?',
@@ -736,7 +735,7 @@ export async function generateNewKey(): Promise<void> {
       }]);
       
       if (backupAnswer.backup) {
-        const backupDirAnswer: InquirerAnswers = await inquirer.prompt([{
+        const backupDirAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'input',
           name: 'backupDir',
           message: 'Enter a directory to save backups:',
@@ -809,7 +808,7 @@ export async function viewKeyDetails(preloadedKeys: KeySearchResult[] | null = n
       };
     });
     
-    const keyAnswer: InquirerAnswers = await inquirer.prompt([{
+    const keyAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'list',
       name: 'selectedKeyId',
       message: 'Select a key to view details:',
@@ -875,7 +874,7 @@ export async function viewKeyDetails(preloadedKeys: KeySearchResult[] | null = n
     console.log(chalk.bold.green('\n========================='));
     
     // Offer to view key content
-    const contentAnswer: InquirerAnswers = await inquirer.prompt([{
+    const contentAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'confirm',
       name: 'viewContent',
       message: 'Would you like to view the key content?',
@@ -886,7 +885,7 @@ export async function viewKeyDetails(preloadedKeys: KeySearchResult[] | null = n
       // Ask about private key for self keys
       let viewPrivate = false;
       if (keyInfo.source === 'self') {
-        const privateAnswer: InquirerAnswers = await inquirer.prompt([{
+        const privateAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'confirm',
           name: 'usePrivate',
           message: 'View private key? (WARNING: Private keys should be kept secure)',
@@ -949,7 +948,7 @@ export async function exportKeys(): Promise<void> {
       };
     });
     
-    const keyAnswer: InquirerAnswers = await inquirer.prompt([{
+    const keyAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'list',
       name: 'selectedKeyId',
       message: 'Select a key to export:',
@@ -967,7 +966,7 @@ export async function exportKeys(): Promise<void> {
     // Ask about private key for self keys
     let exportPrivate = false;
     if (keyInfo.source === 'self') {
-      const privateAnswer: InquirerAnswers = await inquirer.prompt([{
+      const privateAnswer = await inquirer.prompt<InquirerAnswers>([{
         type: 'confirm',
         name: 'usePrivate',
         message: 'Export private key? (WARNING: Private keys should be kept secure)',
@@ -977,7 +976,7 @@ export async function exportKeys(): Promise<void> {
     }
     
     // Get export location
-    const exportAnswer: InquirerAnswers = await inquirer.prompt([{
+    const exportAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'input',
       name: 'exportDir',
       message: 'Enter a directory to export the key:',
@@ -1001,7 +1000,7 @@ export async function exportKeys(): Promise<void> {
       filename = `${keyInfo.name.replace(/[^a-z0-9_-]/gi, '_')}.pem`;
     }
     
-    const filenameAnswer: InquirerAnswers = await inquirer.prompt([{
+    const filenameAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'input',
       name: 'customFilename',
       message: 'Enter a filename (leave empty to use default):',
@@ -1067,7 +1066,7 @@ export async function removeKeys(): Promise<void> {
       };
     });
     
-    const keyAnswer: InquirerAnswers = await inquirer.prompt([{
+    const keyAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'list',
       name: 'selectedKeyId',
       message: 'Select a key to remove:',
@@ -1088,7 +1087,7 @@ export async function removeKeys(): Promise<void> {
       confirmMessage = chalk.yellow('WARNING: You are about to remove your personal key. This will prevent decryption of messages sent to you. Are you sure?');
     }
     
-    const confirmAnswer: InquirerAnswers = await inquirer.prompt([{
+    const confirmAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'confirm',
       name: 'confirm',
       message: confirmMessage,
@@ -1136,7 +1135,7 @@ export async function runDiagnostics(): Promise<void> {
     
     // Offer to fix common issues
     if (results.errors.length > 0 || results.warnings.length > 0) {
-      const fixAnswer: InquirerAnswers = await inquirer.prompt([{
+      const fixAnswer = await inquirer.prompt<InquirerAnswers>([{
         type: 'confirm',
         name: 'fixIssues',
         message: 'Would you like to attempt to fix issues automatically?',
@@ -1181,7 +1180,7 @@ async function fixDiagnosticIssues(diagnosticResults: any): Promise<void> {
     // Check for missing self key
     if (!diagnosticResults.keyStats.self) {
       console.log(chalk.yellow('\nYou have no self key for encryption/decryption.'));
-      const generateAnswer: InquirerAnswers = await inquirer.prompt([{
+      const generateAnswer = await inquirer.prompt<InquirerAnswers>([{
         type: 'confirm',
         name: 'generateKey',
         message: 'Would you like to generate a new key?',
@@ -1263,7 +1262,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
     }
     
     // Get message
-    const messageAnswer: InquirerAnswers = await inquirer.prompt([{
+    const messageAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'editor',
       name: 'message',
       message: 'Enter your message:',
@@ -1332,7 +1331,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
     choices.push({ name: 'Use GPG keyring directly (select a GPG key)', value: 'gpg', short: 'GPG' });
     
     // Get recipient
-    const recipientAnswer: InquirerAnswers = await inquirer.prompt([{
+    const recipientAnswer = await inquirer.prompt<InquirerAnswers>([{
       type: 'list',
       name: 'recipient',
       message: 'Select recipient:',
@@ -1364,7 +1363,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
           console.log(chalk.blue('Proceeding without GPG integration...'));
           
           // Ask if user wants to continue with another encryption option
-          const continueAnswer: InquirerAnswers = await inquirer.prompt([{
+          const continueAnswer = await inquirer.prompt<InquirerAnswers>([{
             type: 'confirm',
             name: 'continueAnyway',
             message: 'Do you want to continue with another encryption option?',
@@ -1376,7 +1375,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
           }
           
           // Provide alternative encryption options
-          const altAnswer: InquirerAnswers = await inquirer.prompt([{
+          const altAnswer = await inquirer.prompt<InquirerAnswers>([{
             type: 'list',
             name: 'altRecipient',
             message: 'Select an alternative recipient:',
@@ -1392,7 +1391,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         console.log(chalk.blue('Proceeding without GPG integration...'));
         
         // Fall back to alternative options due to the error
-        const continueAfterErrorAnswer: InquirerAnswers = await inquirer.prompt([{
+        const continueAfterErrorAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'confirm',
           name: 'continueAfterError',
           message: 'Would you like to continue with an alternative encryption method?',
@@ -1404,7 +1403,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         }
         
         // Provide alternative encryption options
-        const emergencyAnswer: InquirerAnswers = await inquirer.prompt([{
+        const emergencyAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'list',
           name: 'emergencyRecipient',
           message: 'Select an alternative recipient:',
@@ -1420,7 +1419,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         console.log(chalk.yellow(`\n${reason}`));
         
         // Ask if user wants to continue with another encryption option
-        const continueAnswer: InquirerAnswers = await inquirer.prompt([{
+        const continueAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'confirm',
           name: 'continueWithoutGpg',
           message: 'Would you like to continue with an alternative encryption method?',
@@ -1432,7 +1431,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         }
         
         // Provide alternative encryption options
-        const altMethodAnswer: InquirerAnswers = await inquirer.prompt([{
+        const altMethodAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'list',
           name: 'alternativeMethod',
           message: 'Select an alternative encryption method:',
@@ -1455,7 +1454,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         console.log(chalk.yellow('\nNo keys found in GPG keyring'));
         
         // Ask if user wants to continue with another encryption option
-        const continueAnswer: InquirerAnswers = await inquirer.prompt([{
+        const continueAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'confirm',
           name: 'continueWithoutGpg',
           message: 'Would you like to continue with an alternative encryption method?',
@@ -1467,7 +1466,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         }
         
         // Provide alternative encryption options
-        const altMethodAnswer: InquirerAnswers = await inquirer.prompt([{
+        const altMethodAnswer = await inquirer.prompt<InquirerAnswers>([{
           type: 'list',
           name: 'alternativeMethod',
           message: 'Select an alternative encryption method:',
@@ -1518,7 +1517,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         return await handleAlternativeEncryption('No valid GPG keys found. Please try an alternative method.');
       }
       
-      const gpgKeyAnswer: InquirerAnswers = await inquirer.prompt([{
+      const gpgKeyAnswer = await inquirer.prompt<InquirerAnswers>([{
         type: 'list',
         name: 'gpgKey',
         message: 'Select a GPG key:',
@@ -1529,7 +1528,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
     }
     
     // Get paste options
-    const optionsAnswers: InquirerAnswers = await inquirer.prompt([
+    const optionsAnswers = await inquirer.prompt<InquirerAnswers>([
       {
         type: 'confirm',
         name: 'isTemp',
@@ -1569,7 +1568,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
           console.log(chalk.blue('\nTrying again with alternative encryption...'));
           
           // Fall back to standard encryption if GPG export times out
-          const fallbackAnswer: InquirerAnswers = await inquirer.prompt([{
+          const fallbackAnswer = await inquirer.prompt<InquirerAnswers>([{
             type: 'list',
             name: 'fallbackOption',
             message: 'Select an alternative encryption method:',
