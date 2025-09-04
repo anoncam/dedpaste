@@ -1,46 +1,46 @@
-import { marked } from 'marked';
-import hljs from 'highlight.js/lib/core';
+import { marked } from "marked";
+import hljs from "highlight.js/lib/core";
 // Import only the languages we want to support to keep bundle size down
-import javascript from 'highlight.js/lib/languages/javascript';
-import typescript from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import json from 'highlight.js/lib/languages/json';
-import xml from 'highlight.js/lib/languages/xml'; // HTML, XML
-import css from 'highlight.js/lib/languages/css';
-import markdown from 'highlight.js/lib/languages/markdown';
-import bash from 'highlight.js/lib/languages/bash';
-import yaml from 'highlight.js/lib/languages/yaml';
-import sql from 'highlight.js/lib/languages/sql';
-import java from 'highlight.js/lib/languages/java';
-import cpp from 'highlight.js/lib/languages/cpp';
-import go from 'highlight.js/lib/languages/go';
-import rust from 'highlight.js/lib/languages/rust';
-import ruby from 'highlight.js/lib/languages/ruby';
-import php from 'highlight.js/lib/languages/php';
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import json from "highlight.js/lib/languages/json";
+import xml from "highlight.js/lib/languages/xml"; // HTML, XML
+import css from "highlight.js/lib/languages/css";
+import markdown from "highlight.js/lib/languages/markdown";
+import bash from "highlight.js/lib/languages/bash";
+import yaml from "highlight.js/lib/languages/yaml";
+import sql from "highlight.js/lib/languages/sql";
+import java from "highlight.js/lib/languages/java";
+import cpp from "highlight.js/lib/languages/cpp";
+import go from "highlight.js/lib/languages/go";
+import rust from "highlight.js/lib/languages/rust";
+import ruby from "highlight.js/lib/languages/ruby";
+import php from "highlight.js/lib/languages/php";
 
 // Import MUI styles
-import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from './muiStyles';
+import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from "./muiStyles";
 
 // Register languages with highlight.js
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('xml', xml);
-hljs.registerLanguage('html', xml); // HTML is handled by XML
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('sh', bash); // Shell alias
-hljs.registerLanguage('yaml', yaml);
-hljs.registerLanguage('sql', sql);
-hljs.registerLanguage('java', java);
-hljs.registerLanguage('cpp', cpp);
-hljs.registerLanguage('c++', cpp); // C++ alias
-hljs.registerLanguage('go', go);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('ruby', ruby);
-hljs.registerLanguage('php', php);
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("html", xml); // HTML is handled by XML
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash); // Shell alias
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("c++", cpp); // C++ alias
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("ruby", ruby);
+hljs.registerLanguage("php", php);
 
 // Define the environment interface for Cloudflare Workers
 type Env = {
@@ -64,8 +64,9 @@ const ONE_TIME_PREFIX = "onetime-";
 
 // Generate a random ID for the paste
 function generateId(length = 8): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let result = "";
   for (let i = 0; i < length; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -86,7 +87,7 @@ interface ViewedPasteTracker {
 const viewedPastes: ViewedPasteTracker = {};
 
 // KV namespace key for tracking viewed pastes (to persist across worker restarts/instances)
-const VIEWED_PASTES_KEY = 'viewed_pastes_registry';
+const VIEWED_PASTES_KEY = "viewed_pastes_registry";
 
 // Helper function to safely parse JSON with a default value
 function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
@@ -94,67 +95,75 @@ function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
   try {
     return JSON.parse(jsonString) as T;
   } catch (e) {
-    console.error('Error parsing JSON:', e);
+    console.error("Error parsing JSON:", e);
     return defaultValue;
   }
 }
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(
+    request: Request,
+    env: Env,
+    ctx: ExecutionContext,
+  ): Promise<Response> {
     // Initialize viewedPastes from KV store if available (completely optional enhancement)
     try {
       if (env.PASTE_METADATA) {
-        const storedViewedPastes = await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
+        const storedViewedPastes =
+          await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
         if (storedViewedPastes) {
-          const parsedPastes = safeJsonParse<ViewedPasteTracker>(storedViewedPastes, {});
+          const parsedPastes = safeJsonParse<ViewedPasteTracker>(
+            storedViewedPastes,
+            {},
+          );
           // Merge with any in-memory pastes (newer ones take precedence)
           Object.assign(viewedPastes, parsedPastes);
         }
       }
     } catch (error) {
       // Log but continue without error - KV is an enhancement, not a requirement
-      console.log('[KV] Optional paste metadata storage not available:', error);
+      console.log("[KV] Optional paste metadata storage not available:", error);
     }
     const url = new URL(request.url);
     const path = url.pathname;
 
     // Handle OPTIONS requests for CORS
-    if (request.method === 'OPTIONS') {
+    if (request.method === "OPTIONS") {
       return new Response(null, {
         headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
         },
       });
     }
 
     // Upload a new paste
-    if (request.method === 'POST') {
+    if (request.method === "POST") {
       // Handle regular uploads
-      if (path === '/upload' || path === '/temp') {
-        const isOneTime = path === '/temp';
+      if (path === "/upload" || path === "/temp") {
+        const isOneTime = path === "/temp";
         return await handleUpload(request, env, isOneTime, false);
       }
-      
+
       // Handle encrypted uploads
-      if (path === '/e/upload' || path === '/e/temp') {
-        const isOneTime = path === '/e/temp';
+      if (path === "/e/upload" || path === "/e/temp") {
+        const isOneTime = path === "/e/temp";
         return await handleUpload(request, env, isOneTime, true);
       }
-      
-      return new Response('Not found', { status: 404 });
+
+      return new Response("Not found", { status: 404 });
     }
 
     // Get a paste
-    if (request.method === 'GET') {
+    if (request.method === "GET") {
       // Handle regular pastes
       const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})$/);
       if (regularMatch) {
         const id = regularMatch[1];
         return await handleGet(id, env, ctx, false, request);
       }
-      
+
       // Handle encrypted pastes
       const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})$/);
       if (encryptedMatch) {
@@ -163,33 +172,33 @@ export default {
       }
 
       // Try to serve styles.css directly if [site] configuration doesn't work
-      if (path === '/styles.css') {
+      if (path === "/styles.css") {
         // Serve MUI CSS instead of Tailwind
         const cssContent = getMuiCSS();
-        
-        console.log('Serving MUI CSS file');
+
+        console.log("Serving MUI CSS file");
         return new Response(cssContent, {
           headers: {
-            'Content-Type': 'text/css',
-            'Cache-Control': 'public, max-age=86400',
+            "Content-Type": "text/css",
+            "Cache-Control": "public, max-age=86400",
           },
         });
       }
-      
+
       // Serve the HTML homepage
-      if (path === '/') {
+      if (path === "/") {
         return new Response(generateHomepage(url.origin), {
           headers: {
-            'Content-Type': 'text/html',
-            'Access-Control-Allow-Origin': '*',
+            "Content-Type": "text/html",
+            "Access-Control-Allow-Origin": "*",
           },
         });
       }
 
-      return new Response('Not found', { status: 404 });
+      return new Response("Not found", { status: 404 });
     }
 
-    return new Response('Method not allowed', { status: 405 });
+    return new Response("Method not allowed", { status: 405 });
   },
 };
 
@@ -488,40 +497,47 @@ curl ${origin}/e/{paste-id}</code></pre>
   */
 }
 
-async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEncrypted: boolean): Promise<Response> {
-  const contentType = request.headers.get('Content-Type') || 'text/plain';
+async function handleUpload(
+  request: Request,
+  env: Env,
+  isOneTime: boolean,
+  isEncrypted: boolean,
+): Promise<Response> {
+  const contentType = request.headers.get("Content-Type") || "text/plain";
   const content = await request.arrayBuffer();
-  
+
   // Check if the content is empty
   if (content.byteLength === 0) {
-    return new Response('Content cannot be empty', { status: 400 });
+    return new Response("Content cannot be empty", { status: 400 });
   }
-  
+
   // Generate a unique ID for the paste
   let id = generateId();
-  
+
   // Ensure encrypted content is always stored with the correct content type
   // This fixes issues with one-time encrypted pastes
-  const adjustedContentType = isEncrypted ? 'application/json' : contentType;
-  
+  const adjustedContentType = isEncrypted ? "application/json" : contentType;
+
   // For one-time pastes, use a completely different storage strategy with a prefix
   if (isOneTime) {
     // Add a prefix to clearly identify one-time pastes
     const storageKey = `${ONE_TIME_PREFIX}${id}`;
-    
+
     // Create the metadata for the paste
     const metadata: PasteMetadata = {
       contentType: adjustedContentType,
       isOneTime: true, // Always true for this storage path
       createdAt: Date.now(),
     };
-    
+
     // Store the content in R2 with the prefixed key
     await env.PASTE_BUCKET.put(storageKey, content, {
       customMetadata: metadata as any,
     });
-    
-    console.log(`Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}`);
+
+    console.log(
+      `Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}`,
+    );
   } else {
     // Regular paste - standard storage path
     // Create the metadata for the paste
@@ -530,15 +546,15 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
       isOneTime: false, // Always false for this storage path
       createdAt: Date.now(),
     };
-    
+
     // Store the content in R2 with metadata
     await env.PASTE_BUCKET.put(id, content, {
       customMetadata: metadata as any,
     });
-    
+
     console.log(`Created regular paste ${id}, isEncrypted=${isEncrypted}`);
   }
-  
+
   const baseUrl = new URL(request.url).origin;
   // Generate URL with /e/ prefix for encrypted pastes
   const pasteUrl = isEncrypted ? `${baseUrl}/e/${id}` : `${baseUrl}/${id}`;
@@ -546,140 +562,183 @@ async function handleUpload(request: Request, env: Env, isOneTime: boolean, isEn
   // Return the paste URL - we always use the unprefixed ID in the URL
   return new Response(pasteUrl, {
     headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Content-Type': 'text/plain',
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "text/plain",
     },
   });
 }
 
-async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypted: boolean, request: Request): Promise<Response> {
+async function handleGet(
+  id: string,
+  env: Env,
+  ctx: ExecutionContext,
+  isEncrypted: boolean,
+  request: Request,
+): Promise<Response> {
   // Check for raw parameter to bypass markdown rendering
   const url = new URL(request.url);
-  const wantsRaw = url.searchParams.get('raw') === 'true';
+  const wantsRaw = url.searchParams.get("raw") === "true";
   // First, check if this is a one-time paste by trying to get it with the one-time prefix
   const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
-  console.log(`[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`);
-  
+  console.log(
+    `[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`,
+  );
+
   // Add onlyIf condition to bust caches
   const oneTimePaste = await env.PASTE_BUCKET.get(oneTimeKey);
-  
+
   // If we found a one-time paste with the prefixed key
   if (oneTimePaste) {
     // Check if this paste has already been viewed in this instance
     if (oneTimeKey in viewedPastes) {
-      console.log(`[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`);
-      
+      console.log(
+        `[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`,
+      );
+
       // Double-check by trying to delete it again, just to be sure
       try {
         await env.PASTE_BUCKET.delete(oneTimeKey);
       } catch (e) {
         // Ignore errors
       }
-      
-      return new Response('This one-time paste has already been viewed and is no longer available.', {
-        status: 404,
-        headers: {
-          'Content-Type': 'text/plain',
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-          'Surrogate-Control': 'no-store',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'X-One-Time': 'true',
-          'X-Already-Viewed': 'true'
-        }
-      });
+
+      return new Response(
+        "This one-time paste has already been viewed and is no longer available.",
+        {
+          status: 404,
+          headers: {
+            "Content-Type": "text/plain",
+            "Cache-Control":
+              "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+            "Surrogate-Control": "no-store",
+            Pragma: "no-cache",
+            Expires: "0",
+            "X-One-Time": "true",
+            "X-Already-Viewed": "true",
+          },
+        },
+      );
     }
-    
+
     // Mark this paste as viewed with timestamp
     viewedPastes[oneTimeKey] = {
       viewedAt: Date.now(),
       deleted: false,
-      attempts: 0
+      attempts: 0,
     };
-    
+
     // Store in KV if available (optional enhancement)
     if (env.PASTE_METADATA) {
       try {
-        await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+        await env.PASTE_METADATA.put(
+          VIEWED_PASTES_KEY,
+          JSON.stringify(viewedPastes),
+        );
       } catch (error) {
         // Non-blocking error - the in-memory tracking still works
         console.log(`[KV] Optional metadata storage unavailable: ${error}`);
       }
     }
-    console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`);
-    
+    console.log(
+      `[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`,
+    );
+
     // Get the content and metadata before we delete the paste
     const content = await oneTimePaste.arrayBuffer();
-    let contentType = 'text/plain';
-    let filename = '';
-    
+    let contentType = "text/plain";
+    let filename = "";
+
     try {
       const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
-      contentType = metadata.contentType || 'text/plain';
-      filename = metadata.filename || '';
-      console.log(`[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
+      contentType = metadata.contentType || "text/plain";
+      filename = metadata.filename || "";
+      console.log(
+        `[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`,
+      );
     } catch (err) {
-      console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
+      console.error(
+        `[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`,
+      );
     }
-    
+
     // Override content type if this is an encrypted paste but the content type doesn't match
     // This ensures proper decryption on the client side
-    if (isEncrypted && contentType !== 'application/json') {
-      console.log(`[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`);
-      contentType = 'application/json';
+    if (isEncrypted && contentType !== "application/json") {
+      console.log(
+        `[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`,
+      );
+      contentType = "application/json";
     }
-    
+
     // Delete the paste immediately before returning the content
     try {
       // First deletion attempt - force immediate deletion
       await env.PASTE_BUCKET.delete(oneTimeKey);
-      console.log(`[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`);
-      
+      console.log(
+        `[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`,
+      );
+
       // Important: Add a small delay to allow propagation in Cloudflare's systems
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
       // Second deletion attempt to ensure consistency
       await env.PASTE_BUCKET.delete(oneTimeKey);
-      console.log(`[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`);
-      
+      console.log(
+        `[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`,
+      );
+
       // Verify the deletion worked
       const verifyDeletion = await env.PASTE_BUCKET.get(oneTimeKey);
       if (verifyDeletion) {
-        console.error(`[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`);
+        console.error(
+          `[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`,
+        );
         // Even though deletion appears to have failed, mark it as viewed in our tracking
         // system to prevent subsequent access
         viewedPastes[oneTimeKey].deleted = false;
         viewedPastes[oneTimeKey].attempts++;
-        
+
         // Store updated tracking in KV if available
         if (env.PASTE_METADATA) {
           try {
-            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+            await env.PASTE_METADATA.put(
+              VIEWED_PASTES_KEY,
+              JSON.stringify(viewedPastes),
+            );
           } catch (kvError) {
             // Non-blocking - in-memory tracking still works
             console.log(`[KV] Optional metadata update failed: ${kvError}`);
           }
         }
-        
+
         // Force another deletion attempt
         await env.PASTE_BUCKET.delete(oneTimeKey);
       } else {
-        console.log(`[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`);
+        console.log(
+          `[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`,
+        );
         viewedPastes[oneTimeKey].deleted = true;
         viewedPastes[oneTimeKey].attempts++;
-        
+
         // Store updated tracking in KV
         try {
           if (env.PASTE_METADATA) {
-            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+            await env.PASTE_METADATA.put(
+              VIEWED_PASTES_KEY,
+              JSON.stringify(viewedPastes),
+            );
           }
         } catch (kvError) {
-          console.error(`[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`);
+          console.error(
+            `[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`,
+          );
         }
       }
     } catch (error) {
-      console.error(`[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`);
-      
+      console.error(
+        `[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`,
+      );
+
       // Schedule multiple backup deletion attempts to make sure it gets deleted
       ctx.waitUntil(
         (async () => {
@@ -689,147 +748,172 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
             try {
               // Add delay between attempts with exponential backoff
               const delay = 200 * Math.pow(2, i); // 200ms, 400ms, 800ms, 1600ms, 3200ms
-              await new Promise(resolve => setTimeout(resolve, delay));
-              console.log(`[TEMP PASTE] Backup deletion attempt ${i+1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`);
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              console.log(
+                `[TEMP PASTE] Backup deletion attempt ${i + 1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`,
+              );
               await env.PASTE_BUCKET.delete(oneTimeKey);
-              
+
               // Verify after each attempt
               const checkResult = await env.PASTE_BUCKET.get(oneTimeKey);
               if (!checkResult) {
-                console.log(`[TEMP PASTE] Backup deletion attempt ${i+1} successfully deleted one-time paste ${id}`);
-                
+                console.log(
+                  `[TEMP PASTE] Backup deletion attempt ${i + 1} successfully deleted one-time paste ${id}`,
+                );
+
                 // Update tracking with success
                 viewedPastes[oneTimeKey].deleted = true;
                 viewedPastes[oneTimeKey].attempts += 1;
-                
+
                 // Store updated tracking in KV if available
                 if (env.PASTE_METADATA) {
                   try {
-                    await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
+                    await env.PASTE_METADATA.put(
+                      VIEWED_PASTES_KEY,
+                      JSON.stringify(viewedPastes),
+                    );
                   } catch (kvUpdateError) {
                     // Non-blocking - in-memory tracking still works
-                    console.log(`[KV] Optional metadata backup update failed: ${kvUpdateError}`);
+                    console.log(
+                      `[KV] Optional metadata backup update failed: ${kvUpdateError}`,
+                    );
                   }
                 }
-                
+
                 break; // Successfully deleted
               }
             } catch (backupError) {
-              console.error(`[TEMP PASTE] Backup deletion attempt ${i+1} failed for one-time paste ${id}: ${backupError}`);
+              console.error(
+                `[TEMP PASTE] Backup deletion attempt ${i + 1} failed for one-time paste ${id}: ${backupError}`,
+              );
             }
           }
-        })()
+        })(),
       );
     }
-    
+
     // Check if this is markdown content that should be rendered as HTML
-    const isMarkdown = contentType === 'text/markdown' || 
-                       contentType === 'text/x-markdown' || 
-                       filename.endsWith('.md') ||
-                       filename.endsWith('.markdown');
-    
+    const isMarkdown =
+      contentType === "text/markdown" ||
+      contentType === "text/x-markdown" ||
+      filename.endsWith(".md") ||
+      filename.endsWith(".markdown");
+
     if (isMarkdown && !isEncrypted && !wantsRaw) {
       // Convert markdown to HTML for browser viewing
       const textContent = new TextDecoder().decode(content);
-      const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename, true);
-      
+      const renderedHTML = await renderMarkdownAsHTML(
+        textContent,
+        id,
+        filename,
+        true,
+      );
+
       return new Response(renderedHTML, {
         headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Access-Control-Allow-Origin': '*',
-          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-          'CDN-Cache-Control': 'no-store',
-          'Surrogate-Control': 'no-store',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-          'X-Original-Content-Type': contentType,
-          'X-Rendered-Markdown': 'true',
-          'X-One-Time': 'true',
-          'X-Paste-Viewed-At': new Date().toISOString(),
+          "Content-Type": "text/html; charset=utf-8",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control":
+            "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+          "CDN-Cache-Control": "no-store",
+          "Surrogate-Control": "no-store",
+          Pragma: "no-cache",
+          Expires: "0",
+          "X-Original-Content-Type": contentType,
+          "X-Rendered-Markdown": "true",
+          "X-One-Time": "true",
+          "X-Paste-Viewed-At": new Date().toISOString(),
         },
       });
     }
-    
+
     // Return the content with stronger cache control headers
     return new Response(content, {
       headers: {
-        'Content-Type': contentType,
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
-        'CDN-Cache-Control': 'no-store', // Additional CDN-specific directive
-        'Surrogate-Control': 'no-store', // For Cloudflare and other CDNs
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'X-Encrypted': isEncrypted ? 'true' : 'false',
-        'X-One-Time': 'true', // Mark as one-time paste explicitly
-        'X-Paste-Viewed-At': new Date().toISOString(), // Add timestamp of viewing
+        "Content-Type": contentType,
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control":
+          "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
+        "CDN-Cache-Control": "no-store", // Additional CDN-specific directive
+        "Surrogate-Control": "no-store", // For Cloudflare and other CDNs
+        Pragma: "no-cache",
+        Expires: "0",
+        "X-Encrypted": isEncrypted ? "true" : "false",
+        "X-One-Time": "true", // Mark as one-time paste explicitly
+        "X-Paste-Viewed-At": new Date().toISOString(), // Add timestamp of viewing
       },
     });
   }
-  
+
   // If not a one-time paste or if it's already been retrieved (deleted),
   // check for a regular paste
   const paste = await env.PASTE_BUCKET.get(id);
-  
+
   if (!paste) {
-    return new Response('Paste not found', { status: 404 });
+    return new Response("Paste not found", { status: 404 });
   }
-  
+
   // Regular paste - get the content and metadata
   const content = await paste.arrayBuffer();
-  let contentType = 'text/plain';
-  let filename = '';
-  
+  let contentType = "text/plain";
+  let filename = "";
+
   try {
     const metadata = paste.customMetadata as unknown as PasteMetadata;
-    contentType = metadata.contentType || 'text/plain';
-    filename = metadata.filename || '';
-    console.log(`[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
+    contentType = metadata.contentType || "text/plain";
+    filename = metadata.filename || "";
+    console.log(
+      `[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`,
+    );
   } catch (err) {
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
   }
-  
+
   // Override content type if this is an encrypted paste but the content type doesn't match
   // This ensures proper decryption on the client side
-  if (isEncrypted && contentType !== 'application/json') {
-    console.log(`[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`);
-    contentType = 'application/json';
+  if (isEncrypted && contentType !== "application/json") {
+    console.log(
+      `[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`,
+    );
+    contentType = "application/json";
   }
-  
+
   // Check if this is markdown content that should be rendered as HTML
-  const isMarkdown = contentType === 'text/markdown' || 
-                     contentType === 'text/x-markdown' || 
-                     filename.endsWith('.md') ||
-                     filename.endsWith('.markdown');
-  
+  const isMarkdown =
+    contentType === "text/markdown" ||
+    contentType === "text/x-markdown" ||
+    filename.endsWith(".md") ||
+    filename.endsWith(".markdown");
+
   if (isMarkdown && !isEncrypted && !wantsRaw) {
     // Convert markdown to HTML for browser viewing
     const textContent = new TextDecoder().decode(content);
     const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename);
-    
+
     return new Response(renderedHTML, {
       headers: {
-        'Content-Type': 'text/html; charset=utf-8',
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-        'Pragma': 'no-cache',
-        'Expires': '0',
-        'X-Original-Content-Type': contentType,
-        'X-Rendered-Markdown': 'true',
+        "Content-Type": "text/html; charset=utf-8",
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control":
+          "no-store, no-cache, must-revalidate, proxy-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+        "X-Original-Content-Type": contentType,
+        "X-Rendered-Markdown": "true",
       },
     });
   }
-  
+
   // Return the paste content with robust caching headers
   return new Response(content, {
     headers: {
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0',
+      "Content-Type": contentType,
+      "Access-Control-Allow-Origin": "*",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      Pragma: "no-cache",
+      Expires: "0",
       // Add a header to indicate if the paste is encrypted
-      'X-Encrypted': isEncrypted ? 'true' : 'false',
+      "X-Encrypted": isEncrypted ? "true" : "false",
     },
   });
 }
@@ -842,24 +926,37 @@ async function handleGet(id: string, env: Env, ctx: ExecutionContext, isEncrypte
  * @param isOneTime Whether this is a one-time paste
  * @returns Complete HTML page with rendered markdown
  */
-async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, filename: string = '', isOneTime: boolean = false): Promise<string> {
+async function renderMarkdownAsHTML(
+  markdownContent: string,
+  pasteId: string,
+  filename: string = "",
+  isOneTime: boolean = false,
+): Promise<string> {
   // Create a custom renderer for marked
   const renderer = new marked.Renderer();
   let codeBlockId = 0;
-  
+
   // Track if we have any mermaid diagrams
   let hasMermaidDiagrams = false;
   let mermaidBlockId = 0;
-  
+
   // Override code block rendering to add syntax highlighting
-  renderer.code = function({ text, lang, escaped }: { text: string; lang?: string; escaped?: boolean }): string {
+  renderer.code = function ({
+    text,
+    lang,
+    escaped,
+  }: {
+    text: string;
+    lang?: string;
+    escaped?: boolean;
+  }): string {
     const blockId = `code-block-${++codeBlockId}`;
-    
+
     // Check if this is a mermaid diagram
-    if (lang === 'mermaid') {
+    if (lang === "mermaid") {
       hasMermaidDiagrams = true;
       const mermaidId = `mermaid-${++mermaidBlockId}`;
-      
+
       // Return a special wrapper for mermaid diagrams with toggle functionality
       return `<div class="mermaid-wrapper" id="${mermaidId}-wrapper">
         <div class="mermaid-header">
@@ -891,11 +988,11 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
         </div>
       </div>`;
     }
-    
+
     // Regular code block handling
     let highlighted: string;
-    let detectedLanguage = lang || 'plaintext';
-    
+    let detectedLanguage = lang || "plaintext";
+
     try {
       if (lang && hljs.getLanguage(lang)) {
         // Use specified language if it's supported
@@ -904,14 +1001,14 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
         // Auto-detect language
         const result = hljs.highlightAuto(text);
         highlighted = result.value;
-        detectedLanguage = result.language || 'plaintext';
+        detectedLanguage = result.language || "plaintext";
       }
     } catch (err) {
       // Fallback to plain text if highlighting fails
       highlighted = escapeHtml(text);
-      detectedLanguage = 'plaintext';
+      detectedLanguage = "plaintext";
     }
-    
+
     // Return the highlighted code with a wrapper for the copy button
     return `<div class="code-block-wrapper">
       <div class="code-block-header">
@@ -927,31 +1024,31 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
       <pre><code id="${blockId}" class="hljs language-${escapeHtml(detectedLanguage)}">${highlighted}</code></pre>
     </div>`;
   };
-  
+
   // Configure marked with our custom renderer
   marked.setOptions({
     breaks: true,
     gfm: true,
     renderer: renderer,
   });
-  
+
   // Parse the markdown to HTML
   const htmlContent = await marked.parse(markdownContent);
-  
+
   // Generate a title from the filename or first heading
-  let title = filename || 'Markdown Document';
-  if (title.endsWith('.md')) {
+  let title = filename || "Markdown Document";
+  if (title.endsWith(".md")) {
     title = title.slice(0, -3);
-  } else if (title.endsWith('.markdown')) {
+  } else if (title.endsWith(".markdown")) {
     title = title.slice(0, -9);
   }
-  
+
   // Try to extract the first heading from the content as title
   const headingMatch = markdownContent.match(/^#\s+(.+)$/m);
   if (headingMatch) {
     title = headingMatch[1];
   }
-  
+
   // Generate the complete HTML page
   return `<!DOCTYPE html>
 <html lang="en">
@@ -1483,9 +1580,9 @@ async function renderMarkdownAsHTML(markdownContent: string, pasteId: string, fi
       <span class="brand">Ded</span>Paste - Markdown Viewer
     </div>
     <div class="paste-info">
-      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ''}
+      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ""}
       <span class="paste-id">ID: ${escapeHtml(pasteId)}</span>
-      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ''}
+      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ""}
     </div>
   </header>
   

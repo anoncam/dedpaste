@@ -2,7 +2,7 @@
 
 // Key types
 export interface KeyInfo {
-  type: 'self' | 'friend' | 'pgp' | 'keybase' | 'gpg';
+  type: "self" | "friend" | "pgp" | "keybase" | "gpg";
   name: string;
   path: string | { public: string; private: string };
   public?: string;
@@ -14,7 +14,7 @@ export interface KeyInfo {
   lastUsed?: string | Date | null;
   addedDate?: string;
   id?: string;
-  source?: 'self' | 'friend' | 'pgp' | 'keybase' | 'gpg';
+  source?: "self" | "friend" | "pgp" | "keybase" | "gpg";
   expires?: string | Date;
   trust?: string;
   uids?: Array<{ uid?: string; trust?: string }>;
@@ -39,7 +39,7 @@ export interface EncryptionResult {
 }
 
 export interface RecipientInfo {
-  type: 'self' | 'friend' | 'pgp' | 'keybase';
+  type: "self" | "friend" | "pgp" | "keybase";
   name: string;
   fingerprint: string;
   username?: string;
@@ -125,8 +125,8 @@ export interface InteractiveChoice {
 }
 
 export interface KeyManagementAction {
-  action: 'list' | 'add' | 'remove' | 'export' | 'generate' | 'import';
-  keyType?: 'friend' | 'pgp' | 'keybase';
+  action: "list" | "add" | "remove" | "export" | "generate" | "import";
+  keyType?: "friend" | "pgp" | "keybase";
   keyName?: string;
   keyData?: string;
 }
@@ -136,45 +136,45 @@ export class DedPasteError extends Error {
   constructor(
     message: string,
     public code?: string,
-    public statusCode?: number
+    public statusCode?: number,
   ) {
     super(message);
-    this.name = 'DedPasteError';
+    this.name = "DedPasteError";
   }
 }
 
 export class ValidationError extends DedPasteError {
   constructor(message: string) {
-    super(message, 'VALIDATION_ERROR', 400);
-    this.name = 'ValidationError';
+    super(message, "VALIDATION_ERROR", 400);
+    this.name = "ValidationError";
   }
 }
 
 export class AuthenticationError extends DedPasteError {
   constructor(message: string) {
-    super(message, 'AUTHENTICATION_ERROR', 401);
-    this.name = 'AuthenticationError';
+    super(message, "AUTHENTICATION_ERROR", 401);
+    this.name = "AuthenticationError";
   }
 }
 
 export class EncryptionError extends DedPasteError {
   constructor(message: string) {
-    super(message, 'ENCRYPTION_ERROR', 500);
-    this.name = 'EncryptionError';
+    super(message, "ENCRYPTION_ERROR", 500);
+    this.name = "EncryptionError";
   }
 }
 
 export class StorageError extends DedPasteError {
   constructor(message: string) {
-    super(message, 'STORAGE_ERROR', 500);
-    this.name = 'StorageError';
+    super(message, "STORAGE_ERROR", 500);
+    this.name = "StorageError";
   }
 }
 
 export class RateLimitError extends DedPasteError {
   constructor(message: string) {
-    super(message, 'RATE_LIMIT_ERROR', 429);
-    this.name = 'RateLimitError';
+    super(message, "RATE_LIMIT_ERROR", 429);
+    this.name = "RateLimitError";
   }
 }
 
@@ -192,7 +192,7 @@ export interface DedPasteConfig {
   keyDir: string;
   defaultExpiry?: string;
   defaultEncryption?: boolean;
-  theme?: 'dark' | 'light' | 'auto';
+  theme?: "dark" | "light" | "auto";
   editor?: {
     theme?: string;
     fontSize?: number;
@@ -235,7 +235,7 @@ export interface DiagnosticsOptions {
 }
 
 export interface DiagnosticsResult {
-  status: 'ok' | 'warning' | 'error';
+  status: "ok" | "warning" | "error";
   errors: string[];
   warnings: string[];
   keyDatabase: KeyDatabase | null;
@@ -281,7 +281,7 @@ export interface GpgKeyInfo {
   uids: Array<{ uid: string; trust?: string }>;
   created?: Date;
   expires?: Date;
-  type: 'rsa' | 'dsa' | 'elgamal' | 'ecdh' | 'ecdsa' | 'eddsa' | string;
+  type: "rsa" | "dsa" | "elgamal" | "ecdh" | "ecdsa" | "eddsa" | string;
   trust?: string;
 }
 
@@ -300,11 +300,17 @@ export interface SearchOptions {
 }
 
 export interface KeySearchResult extends KeyInfo {
-  source: 'self' | 'friend' | 'pgp' | 'keybase' | 'gpg';
+  source: "self" | "friend" | "pgp" | "keybase" | "gpg";
 }
 
 export interface ImportKeyOptions {
-  source: 'file' | 'pgp-server' | 'keybase' | 'gpg-keyring' | 'gpg-import' | 'paste';
+  source:
+    | "file"
+    | "pgp-server"
+    | "keybase"
+    | "gpg-keyring"
+    | "gpg-import"
+    | "paste";
   file?: string;
   content?: string;
   name?: string;
