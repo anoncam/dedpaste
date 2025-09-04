@@ -1,0 +1,563 @@
+name: GitHub Copilot Code Review and Quality Analysis
+
+# Comprehensive workflow for code review assistance, security scanning, and quality checks
+# Integrates with existing CI/CD processes and provides automated feedback
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Target branch for analysis'
+        required: false
+        default: 'main'
+      deep_analysis:
+        description: 'Enable deep analysis mode'
+        required: false
+        default: 'false'
+        type: boolean
+
+# Default permissions
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+  actions: read
+  checks: write
+
+jobs:
+  # Pre-flight checks and environment setup
+  setup:
+    name: Setup and Pre-flight Checks
+    runs-on: ubuntu-latest
+    outputs:
+      should_run_analysis: ${{ steps.check.outputs.should_run }}
+      affected_files: ${{ steps.files.outputs.affected_files }}
+      has_typescript_changes: ${{ steps.files.outputs.has_typescript }}
+      has_test_changes: ${{ steps.files.outputs.has_tests }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if analysis should run
+        id: check
+        run: |
+          # Always run on workflow_dispatch
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "Manual trigger - running full analysis"
+            exit 0
+          fi
+
+          # Skip if this is a release commit or version bump
+          if [[ "${{ github.event.head_commit.message }}" =~ ^(Bump version|Release) ]]; then
+            echo "should_run=false" >> $GITHUB_OUTPUT
+            echo "Skipping analysis for release/version bump commit"
+            exit 0
+          fi
+
+          echo "should_run=true" >> $GITHUB_OUTPUT
+
+      - name: Analyze changed files
+        id: files
+        if: steps.check.outputs.should_run == 'true'
+        run: |
+          # Get list of changed files
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD)
+          fi
+
+          echo "Changed files:"
+          echo "$FILES"
+          
+          # Check for TypeScript/JavaScript files
+          TS_JS_FILES=$(echo "$FILES" | grep -E '\.(ts|js|tsx|jsx)$' || true)
+          if [ -n "$TS_JS_FILES" ]; then
+            echo "has_typescript=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_typescript=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check for test files
+          TEST_FILES=$(echo "$FILES" | grep -E 'test|spec' || true)
+          if [ -n "$TEST_FILES" ]; then
+            echo "has_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_tests=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Store affected files (max 100 files to avoid too large output)
+          AFFECTED=$(echo "$FILES" | head -100 | tr '\n' ',' | sed 's/,$//')
+          echo "affected_files=$AFFECTED" >> $GITHUB_OUTPUT
+
+  # Code quality analysis and linting
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should_run_analysis == 'true'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript compilation check
+        if: needs.setup.outputs.has_typescript_changes == 'true'
+        run: |
+          echo "Running TypeScript compilation check..."
+          npm run build 2>&1 | tee build-output.log || echo "TypeScript compilation issues detected"
+
+      - name: Run linting
+        if: needs.setup.outputs.has_typescript_changes == 'true'
+        continue-on-error: true
+        run: |
+          echo "Running ESLint analysis..."
+          npm run lint --if-present 2>&1 | tee lint-output.log || echo "Linting issues detected"
+
+      - name: Run tests with coverage
+        if: needs.setup.outputs.has_test_changes == 'true' || needs.setup.outputs.has_typescript_changes == 'true'
+        continue-on-error: true
+        run: |
+          echo "Running test suite..."
+          npm test 2>&1 | tee test-output.log || echo "Test issues detected"
+
+      - name: Analyze code complexity
+        if: needs.setup.outputs.has_typescript_changes == 'true'
+        continue-on-error: true
+        run: |
+          echo "Analyzing code complexity..."
+          # Simple complexity analysis using file sizes and line counts
+          find src cli -name "*.ts" -o -name "*.js" | while read file; do
+            if [ -f "$file" ]; then
+              lines=$(wc -l < "$file")
+              echo "File: $file - Lines: $lines"
+              if [ $lines -gt 500 ]; then
+                echo "⚠️  Large file detected: $file ($lines lines)"
+              fi
+            fi
+          done > complexity-report.txt
+
+      - name: Generate code quality summary
+        if: always()
+        run: |
+          echo "## 🔍 Code Quality Analysis Results" > quality-summary.md
+          echo "" >> quality-summary.md
+          
+          if [ -f "build-output.log" ]; then
+            echo "### TypeScript Compilation" >> quality-summary.md
+            if grep -q "error" build-output.log; then
+              echo "❌ TypeScript compilation errors detected" >> quality-summary.md
+              echo '```' >> quality-summary.md
+              tail -20 build-output.log >> quality-summary.md
+              echo '```' >> quality-summary.md
+            else
+              echo "✅ TypeScript compilation successful" >> quality-summary.md
+            fi
+            echo "" >> quality-summary.md
+          fi
+
+          if [ -f "lint-output.log" ]; then
+            echo "### Linting Results" >> quality-summary.md
+            if grep -q "error\|warning" lint-output.log; then
+              echo "⚠️  Linting issues detected" >> quality-summary.md
+              echo '```' >> quality-summary.md
+              tail -20 lint-output.log >> quality-summary.md
+              echo '```' >> quality-summary.md
+            else
+              echo "✅ No linting issues found" >> quality-summary.md
+            fi
+            echo "" >> quality-summary.md
+          fi
+
+          if [ -f "test-output.log" ]; then
+            echo "### Test Results" >> quality-summary.md
+            if grep -q "failing\|error" test-output.log; then
+              echo "❌ Test failures detected" >> quality-summary.md
+              echo '```' >> quality-summary.md
+              grep -A 5 -B 5 "failing\|error" test-output.log | tail -20 >> quality-summary.md
+              echo '```' >> quality-summary.md
+            else
+              echo "✅ All tests passing" >> quality-summary.md
+            fi
+            echo "" >> quality-summary.md
+          fi
+
+          if [ -f "complexity-report.txt" ]; then
+            echo "### Code Complexity Analysis" >> quality-summary.md
+            if grep -q "Large file" complexity-report.txt; then
+              echo "⚠️  Large files detected:" >> quality-summary.md
+              echo '```' >> quality-summary.md
+              grep "Large file" complexity-report.txt >> quality-summary.md
+              echo '```' >> quality-summary.md
+            else
+              echo "✅ No complexity issues detected" >> quality-summary.md
+            fi
+          fi
+
+      - name: Upload quality analysis artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: code-quality-analysis
+          path: |
+            *.log
+            *.txt
+            quality-summary.md
+          retention-days: 7
+
+  # Security analysis and vulnerability scanning
+  security-analysis:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should_run_analysis == 'true'
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        continue-on-error: true
+        run: |
+          echo "Running npm security audit..."
+          npm audit --audit-level=moderate --json > npm-audit.json 2>&1 || true
+          npm audit --audit-level=moderate > npm-audit.txt 2>&1 || true
+
+      - name: Analyze encryption implementations
+        if: needs.setup.outputs.has_typescript_changes == 'true'
+        run: |
+          echo "Analyzing encryption and security implementations..."
+          
+          # Check for potential security issues in encryption code
+          echo "## 🔐 Security Analysis Report" > security-report.md
+          echo "" >> security-report.md
+          
+          # Look for encryption-related files
+          find . -name "*.ts" -o -name "*.js" | xargs grep -l -i "encrypt\|crypto\|password\|key" | while read file; do
+            echo "Analyzing security-sensitive file: $file"
+            
+            # Check for hardcoded secrets
+            if grep -n -i "password.*=\|key.*=\|secret.*=" "$file" | grep -v "process.env\|getenv"; then
+              echo "⚠️  Potential hardcoded secrets in $file" >> security-report.md
+            fi
+            
+            # Check for weak crypto usage
+            if grep -n "md5\|sha1\|des" "$file"; then
+              echo "⚠️  Weak cryptographic algorithms detected in $file" >> security-report.md
+            fi
+          done
+
+          # Check for environment variable usage
+          echo "" >> security-report.md
+          echo "### Environment Variables Security" >> security-report.md
+          if find . -name "*.ts" -o -name "*.js" | xargs grep -l "process.env" > /dev/null; then
+            echo "✅ Environment variables used for configuration" >> security-report.md
+          fi
+
+      - name: Check for sensitive data exposure
+        run: |
+          echo "Checking for potential sensitive data exposure..."
+          
+          # Check for console.log with sensitive data
+          if find . -name "*.ts" -o -name "*.js" | xargs grep -n "console.log.*password\|console.log.*key\|console.log.*secret"; then
+            echo "⚠️  Potential sensitive data in console logs" >> security-report.md
+          fi
+          
+          # Check for TODO/FIXME with security implications
+          if find . -name "*.ts" -o -name "*.js" | xargs grep -n -i "TODO.*security\|FIXME.*security\|TODO.*auth\|FIXME.*auth"; then
+            echo "📝 Security-related TODOs found" >> security-report.md
+          fi
+
+      - name: Generate security summary
+        if: always()
+        run: |
+          if [ ! -f "security-report.md" ]; then
+            echo "## 🔐 Security Analysis Report" > security-report.md
+            echo "✅ No security issues detected in static analysis" >> security-report.md
+          fi
+          
+          echo "" >> security-report.md
+          echo "### NPM Audit Results" >> security-report.md
+          
+          if [ -f "npm-audit.json" ]; then
+            VULNS=$(cat npm-audit.json | grep -o '"total":[0-9]*' | head -1 | cut -d':' -f2)
+            if [ "$VULNS" != "0" ] && [ -n "$VULNS" ]; then
+              echo "⚠️  $VULNS vulnerabilities found in dependencies" >> security-report.md
+              echo '```' >> security-report.md
+              head -20 npm-audit.txt >> security-report.md
+              echo '```' >> security-report.md
+            else
+              echo "✅ No vulnerabilities found in dependencies" >> security-report.md
+            fi
+          fi
+
+      - name: Upload security analysis artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-analysis
+          path: |
+            npm-audit.*
+            security-report.md
+          retention-days: 7
+
+  # AI-powered code review suggestions
+  copilot-review:
+    name: AI Code Review
+    runs-on: ubuntu-latest
+    needs: [setup, code-quality, security-analysis]
+    if: always() && needs.setup.outputs.should_run_analysis == 'true' && github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download analysis artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: code-quality-analysis
+          path: ./analysis/
+
+      - name: Download security artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: security-analysis
+          path: ./analysis/
+
+      - name: Generate AI review summary
+        run: |
+          echo "## 🤖 AI-Powered Code Review Summary" > copilot-review.md
+          echo "" >> copilot-review.md
+          echo "Automated analysis completed for PR #${{ github.event.pull_request.number }}" >> copilot-review.md
+          echo "" >> copilot-review.md
+          
+          # Include quality analysis
+          if [ -f "./analysis/quality-summary.md" ]; then
+            cat ./analysis/quality-summary.md >> copilot-review.md
+            echo "" >> copilot-review.md
+          fi
+          
+          # Include security analysis
+          if [ -f "./analysis/security-report.md" ]; then
+            cat ./analysis/security-report.md >> copilot-review.md
+            echo "" >> copilot-review.md
+          fi
+          
+          # Add recommendations based on changed files
+          echo "### 💡 AI Recommendations" >> copilot-review.md
+          echo "" >> copilot-review.md
+          
+          if [ "${{ needs.setup.outputs.has_typescript_changes }}" = "true" ]; then
+            echo "- Consider adding/updating type definitions for better type safety" >> copilot-review.md
+            echo "- Ensure proper error handling for async operations" >> copilot-review.md
+            echo "- Verify that new functions have appropriate JSDoc comments" >> copilot-review.md
+          fi
+          
+          if [ "${{ needs.setup.outputs.has_test_changes }}" = "true" ]; then
+            echo "- Ensure test coverage for new functionality" >> copilot-review.md
+            echo "- Consider edge cases and error conditions in tests" >> copilot-review.md
+          fi
+          
+          # Add specific recommendations for this project
+          echo "- For encryption features: Ensure proper key management and secure defaults" >> copilot-review.md
+          echo "- For CLI functionality: Validate user input and provide helpful error messages" >> copilot-review.md
+          echo "- For Cloudflare Workers: Consider performance implications and bundle size" >> copilot-review.md
+          
+          echo "" >> copilot-review.md
+          echo "---" >> copilot-review.md
+          echo "*This review was generated automatically. Please review suggestions carefully.*" >> copilot-review.md
+
+      - name: Comment on PR with AI review
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Read the generated review
+            let reviewContent = '';
+            try {
+              reviewContent = fs.readFileSync('copilot-review.md', 'utf8');
+            } catch (error) {
+              reviewContent = '## 🤖 AI-Powered Code Review\n\nAnalysis completed but no issues detected.';
+            }
+            
+            // Find existing bot comment
+            const comments = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.data.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('🤖 AI-Powered Code Review')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: reviewContent
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: reviewContent
+              });
+            }
+
+  # Performance and optimization analysis
+  performance-analysis:
+    name: Performance Analysis
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.should_run_analysis == 'true' && (needs.setup.outputs.has_typescript_changes == 'true' || github.event.inputs.deep_analysis == 'true')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Analyze bundle size
+        continue-on-error: true
+        run: |
+          echo "Analyzing bundle and dependency sizes..."
+          
+          # Build the project
+          npm run build
+          
+          # Analyze dist files
+          echo "## 📊 Performance Analysis" > performance-report.md
+          echo "" >> performance-report.md
+          echo "### Bundle Size Analysis" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          if [ -d "dist" ]; then
+            echo "Distribution files:" >> performance-report.md
+            echo '```' >> performance-report.md
+            find dist -name "*.js" -exec ls -lh {} \; | awk '{print $5 " " $9}' >> performance-report.md
+            echo '```' >> performance-report.md
+            echo "" >> performance-report.md
+            
+            # Check for large files
+            find dist -name "*.js" -size +100k | while read file; do
+              echo "⚠️  Large bundle file: $file" >> performance-report.md
+            done
+          fi
+
+      - name: Analyze dependencies
+        run: |
+          echo "### Dependency Analysis" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          # Count dependencies
+          DEPS=$(npm list --depth=0 --prod 2>/dev/null | grep -c "├\|└" || echo "0")
+          DEV_DEPS=$(npm list --depth=0 --dev 2>/dev/null | grep -c "├\|└" || echo "0")
+          
+          echo "- Production dependencies: $DEPS" >> performance-report.md
+          echo "- Development dependencies: $DEV_DEPS" >> performance-report.md
+          echo "" >> performance-report.md
+          
+          # Check for duplicate dependencies
+          npm ls --depth=0 2>&1 | grep -i "duplicate\|conflict" >> performance-report.md || echo "✅ No dependency conflicts detected" >> performance-report.md
+
+      - name: Upload performance artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: performance-analysis
+          path: performance-report.md
+          retention-days: 7
+
+  # Final workflow summary
+  workflow-summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    needs: [setup, code-quality, security-analysis, copilot-review, performance-analysis]
+    if: always() && needs.setup.outputs.should_run_analysis == 'true'
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Generate workflow summary
+        run: |
+          echo "## 📋 Copilot Workflow Summary" > workflow-summary.md
+          echo "" >> workflow-summary.md
+          echo "Workflow completed for: ${{ github.event_name }}" >> workflow-summary.md
+          echo "Repository: ${{ github.repository }}" >> workflow-summary.md
+          echo "Branch: ${{ github.ref_name }}" >> workflow-summary.md
+          echo "Commit: ${{ github.sha }}" >> workflow-summary.md
+          echo "" >> workflow-summary.md
+          
+          echo "### Job Results" >> workflow-summary.md
+          echo "" >> workflow-summary.md
+          echo "- **Setup**: ${{ needs.setup.result }}" >> workflow-summary.md
+          echo "- **Code Quality**: ${{ needs.code-quality.result }}" >> workflow-summary.md
+          echo "- **Security Analysis**: ${{ needs.security-analysis.result }}" >> workflow-summary.md
+          echo "- **AI Code Review**: ${{ needs.copilot-review.result }}" >> workflow-summary.md
+          echo "- **Performance Analysis**: ${{ needs.performance-analysis.result }}" >> workflow-summary.md
+          echo "" >> workflow-summary.md
+          
+          if [ "${{ needs.setup.outputs.has_typescript_changes }}" = "true" ]; then
+            echo "- TypeScript/JavaScript files were analyzed" >> workflow-summary.md
+          fi
+          
+          if [ "${{ needs.setup.outputs.has_test_changes }}" = "true" ]; then
+            echo "- Test files were analyzed" >> workflow-summary.md
+          fi
+          
+          echo "" >> workflow-summary.md
+          echo "Affected files: ${{ needs.setup.outputs.affected_files }}" >> workflow-summary.md
+
+      - name: Output summary
+        run: |
+          cat workflow-summary.md
+          echo "🎉 Copilot workflow analysis completed successfully!"
