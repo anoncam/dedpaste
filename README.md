@@ -33,6 +33,7 @@ A secure, privacy-focused pastebin CLI application powered by Cloudflare Workers
 - **R2 Storage** - Cost-effective object storage
 - **SBOM included** - Software Bill of Materials with each release
 - **TypeScript** - Fully typed for better developer experience
+- **GitHub Copilot Workflow** - AI-powered code review and quality analysis
 
 ## Installation
 
@@ -246,6 +247,7 @@ Documentation for DedPaste is organized in the `docs/` directory:
 - [Contributing Guide](docs/CONTRIBUTING.md) - How to contribute to the project
 - [Release Process](docs/RELEASE-PROCESS.md) - How releases are managed
 - [Testing Guide](docs/TESTING.md) - How to test the application
+- [Copilot Workflow](docs/copilot-workflow.md) - AI-powered code review and quality analysis
 - [Encryption Implementation Plan](docs/encryption-implementation-plan.md) - Details on the encryption design
 - [Encryption Implementation Summary](docs/encryption-implementation-summary.md) - Overview of encryption features
 - [Shell Completion](docs/completion/README.md) - Documentation for shell completion scripts
@@ -308,6 +310,22 @@ npm run build
 
 # Deploy to Cloudflare Workers
 npm run deploy
+```
+
+### 🤖 AI-Powered Code Review
+
+DedPaste includes a comprehensive GitHub Copilot workflow that provides automated code analysis for every pull request:
+
+- **Code Quality Analysis** - TypeScript compilation, linting, complexity checks
+- **Security Analysis** - Dependency vulnerabilities, encryption code review
+- **AI Code Review** - Automated suggestions and recommendations
+- **Performance Analysis** - Bundle size monitoring, dependency analysis
+
+The workflow integrates seamlessly with the existing CI/CD process and provides detailed feedback without interfering with releases. See [Copilot Workflow Documentation](docs/copilot-workflow.md) for complete details.
+
+To test the workflow locally:
+```bash
+./.github/workflows/test-copilot-workflow.sh
 ```
 
 ## 🔧 Technical Stack
