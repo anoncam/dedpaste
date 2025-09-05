@@ -138,8 +138,28 @@ export default {
       });
     }
 
+    // Serve the web interface
+    if (path === "/app" || path === "/app.html") {
+      const htmlContent = await getWebInterface();
+      return new Response(htmlContent, {
+        headers: {
+          "Content-Type": "text/html",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
     // Upload a new paste
     if (request.method === "POST") {
+      // Handle API uploads for web interface
+      if (path === "/api/upload") {
+        return await handleWebUpload(request, env);
+      }
+
+      if (path === "/api/text") {
+        return await handleTextUpload(request, env);
+      }
+
       // Handle regular uploads
       if (path === "/upload" || path === "/temp") {
         const isOneTime = path === "/temp";
@@ -157,18 +177,27 @@ export default {
 
     // Get a paste
     if (request.method === "GET") {
-      // Handle regular pastes
-      const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})$/);
-      if (regularMatch) {
-        const id = regularMatch[1];
-        return await handleGet(id, env, ctx, false, request);
+      // Handle API decryption for web interface
+      const decryptMatch = path.match(/^\/api\/decrypt\/([a-zA-Z0-9]{8})$/);
+      if (decryptMatch) {
+        const id = decryptMatch[1];
+        return await handleWebDecrypt(id, env, ctx, request);
       }
 
-      // Handle encrypted pastes
-      const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})$/);
+      // Handle regular pastes with optional filename
+      const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})(?:\/(.+))?$/);
+      if (regularMatch) {
+        const id = regularMatch[1];
+        const urlFilename = regularMatch[2] || null;
+        return await handleGet(id, env, ctx, false, request, urlFilename);
+      }
+
+      // Handle encrypted pastes with optional filename
+      const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})(?:\/(.+))?$/);
       if (encryptedMatch) {
         const id = encryptedMatch[1];
-        return await handleGet(id, env, ctx, true, request);
+        const urlFilename = encryptedMatch[2] || null;
+        return await handleGet(id, env, ctx, true, request, urlFilename);
       }
 
       // Try to serve styles.css directly if [site] configuration doesn't work
@@ -504,6 +533,7 @@ async function handleUpload(
   isEncrypted: boolean,
 ): Promise<Response> {
   const contentType = request.headers.get("Content-Type") || "text/plain";
+  const filename = request.headers.get("X-Filename") || "";
   const content = await request.arrayBuffer();
 
   // Check if the content is empty
@@ -528,6 +558,7 @@ async function handleUpload(
       contentType: adjustedContentType,
       isOneTime: true, // Always true for this storage path
       createdAt: Date.now(),
+      filename: filename || undefined,
     };
 
     // Store the content in R2 with the prefixed key
@@ -545,6 +576,7 @@ async function handleUpload(
       contentType: adjustedContentType,
       isOneTime: false, // Always false for this storage path
       createdAt: Date.now(),
+      filename: filename || undefined,
     };
 
     // Store the content in R2 with metadata
@@ -556,8 +588,20 @@ async function handleUpload(
   }
 
   const baseUrl = new URL(request.url).origin;
-  // Generate URL with /e/ prefix for encrypted pastes
-  const pasteUrl = isEncrypted ? `${baseUrl}/e/${id}` : `${baseUrl}/${id}`;
+  // Generate URL with /e/ prefix for encrypted pastes and filename if provided
+  let pasteUrl: string;
+  if (filename) {
+    const encodedFilename = encodeURIComponent(filename);
+    pasteUrl = isEncrypted
+      ? `${baseUrl}/e/${id}/${encodedFilename}`
+      : `${baseUrl}/${id}/${encodedFilename}`;
+  } else {
+    // For text pastes without filename, add .txt extension
+    const extension = contentType === "text/plain" ? "/paste.txt" : "";
+    pasteUrl = isEncrypted
+      ? `${baseUrl}/e/${id}${extension}`
+      : `${baseUrl}/${id}${extension}`;
+  }
 
   // Return the paste URL - we always use the unprefixed ID in the URL
   return new Response(pasteUrl, {
@@ -574,6 +618,7 @@ async function handleGet(
   ctx: ExecutionContext,
   isEncrypted: boolean,
   request: Request,
+  urlFilename?: string | null,
 ): Promise<Response> {
   // Check for raw parameter to bypass markdown rendering
   const url = new URL(request.url);
@@ -827,10 +872,19 @@ async function handleGet(
       });
     }
 
+    // Determine if content should be displayed inline or downloaded
+    const isViewableInBrowser = isViewableContentType(contentType);
+    const disposition = isViewableInBrowser ? "inline" : "attachment";
+    const effectiveFilename =
+      urlFilename ||
+      filename ||
+      `${id}${getExtensionForContentType(contentType)}`;
+
     // Return the content with stronger cache control headers
     return new Response(content, {
       headers: {
         "Content-Type": contentType,
+        "Content-Disposition": `${disposition}; filename="${effectiveFilename}"`,
         "Access-Control-Allow-Origin": "*",
         "Cache-Control":
           "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
@@ -869,6 +923,12 @@ async function handleGet(
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
   }
 
+  // Use URL filename if provided, otherwise use stored filename
+  const effectiveFilename =
+    urlFilename ||
+    filename ||
+    `${id}${getExtensionForContentType(contentType)}`;
+
   // Override content type if this is an encrypted paste but the content type doesn't match
   // This ensures proper decryption on the client side
   if (isEncrypted && contentType !== "application/json") {
@@ -904,10 +964,15 @@ async function handleGet(
     });
   }
 
+  // Determine if content should be displayed inline or downloaded
+  const isViewableInBrowser = isViewableContentType(contentType);
+  const disposition = isViewableInBrowser ? "inline" : "attachment";
+
   // Return the paste content with robust caching headers
   return new Response(content, {
     headers: {
       "Content-Type": contentType,
+      "Content-Disposition": `${disposition}; filename="${effectiveFilename}"`,
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
       Pragma: "no-cache",
@@ -916,6 +981,62 @@ async function handleGet(
       "X-Encrypted": isEncrypted ? "true" : "false",
     },
   });
+}
+
+/**
+ * Determines if a content type should be viewed inline in the browser
+ */
+function isViewableContentType(contentType: string): boolean {
+  const viewableTypes = [
+    "text/",
+    "image/",
+    "audio/",
+    "video/",
+    "application/pdf",
+    "application/json",
+    "application/xml",
+    "application/javascript",
+  ];
+
+  return viewableTypes.some((type) => contentType.startsWith(type));
+}
+
+/**
+ * Gets the appropriate file extension for a content type
+ */
+function getExtensionForContentType(contentType: string): string {
+  const extensionMap: { [key: string]: string } = {
+    "text/plain": ".txt",
+    "text/html": ".html",
+    "text/css": ".css",
+    "text/javascript": ".js",
+    "text/markdown": ".md",
+    "text/x-markdown": ".md",
+    "application/json": ".json",
+    "application/xml": ".xml",
+    "application/pdf": ".pdf",
+    "application/zip": ".zip",
+    "application/x-zip-compressed": ".zip",
+    "application/gzip": ".gz",
+    "application/x-tar": ".tar",
+    "application/x-7z-compressed": ".7z",
+    "application/x-rar-compressed": ".rar",
+    "application/octet-stream": ".bin",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/svg+xml": ".svg",
+    "image/webp": ".webp",
+    "video/mp4": ".mp4",
+    "video/webm": ".webm",
+    "video/ogg": ".ogv",
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/wav": ".wav",
+    "audio/webm": ".weba",
+  };
+
+  return extensionMap[contentType] || "";
 }
 
 /**
@@ -1896,4 +2017,762 @@ function escapeHtml(unsafe: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/**
+ * Get the web interface HTML
+ */
+async function getWebInterface(): Promise<string> {
+  // Read the HTML file from the public directory
+  const htmlPath = "/public/index.html";
+  // For now, we'll return the HTML inline since we can't easily read files in Cloudflare Workers
+  // In production, this would be served from a static asset or bundled
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DedPaste - Secure File Sharing</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .tab-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .tab:hover {
+            color: #667eea;
+        }
+
+        .tab.active {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .drop-zone {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: #f8f9ff;
+        }
+
+        .drop-zone:hover {
+            background: #f0f2ff;
+            border-color: #5563d5;
+        }
+
+        .drop-zone.dragging {
+            background: #e8ebff;
+            border-color: #4450c5;
+        }
+
+        .drop-zone-icon {
+            font-size: 3rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .drop-zone p {
+            color: #666;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone span {
+            color: #999;
+            font-size: 0.9rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="password"],
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: 'Courier New', monospace;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .checkbox-group label {
+            cursor: pointer;
+            color: #666;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            flex: 1;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .file-info {
+            background: #f8f9ff;
+            border: 1px solid #e0e0ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .file-info h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .file-info p {
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .result-container {
+            display: none;
+            background: #f0fff4;
+            border: 1px solid #34d399;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .result-container.error {
+            background: #fef2f2;
+            border-color: #f87171;
+        }
+
+        .result-container h3 {
+            color: #10b981;
+            margin-bottom: 10px;
+        }
+
+        .result-container.error h3 {
+            color: #ef4444;
+        }
+
+        .result-url {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .result-url input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .result-url button {
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .result-url button:hover {
+            background: #5563d5;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loader.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .tab-container {
+                flex-direction: column;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>DedPaste</h1>
+            <p>Secure file and text sharing</p>
+        </div>
+        
+        <div class="content">
+            <div class="tab-container">
+                <button class="tab active" data-tab="upload">Upload File</button>
+                <button class="tab" data-tab="text">Share Text</button>
+            </div>
+
+            <!-- Upload Tab -->
+            <div class="tab-content active" id="upload-tab">
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📁</div>
+                    <p>Drop your file here or click to browse</p>
+                    <span>Maximum file size: 100MB</span>
+                    <input type="file" class="file-input" id="fileInput">
+                </div>
+
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <h3>Selected File</h3>
+                    <p id="fileName"></p>
+                    <p id="fileSize"></p>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="oneTime">
+                    <label for="oneTime">Delete after first view (one-time link)</label>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="uploadBtn">Upload & Create Link</button>
+                    <button class="btn btn-secondary" id="clearBtn">Clear</button>
+                </div>
+            </div>
+
+            <!-- Text Tab -->
+            <div class="tab-content" id="text-tab">
+                <div class="form-group">
+                    <label for="textContent">Text Content</label>
+                    <textarea id="textContent" placeholder="Enter or paste your text here..."></textarea>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="textOneTime">
+                    <label for="textOneTime">Delete after first view (one-time link)</label>
+                </div>
+
+                <div class="button-group">
+                    <button class="btn btn-primary" id="shareTextBtn">Create Shareable Link</button>
+                    <button class="btn btn-secondary" id="clearTextBtn">Clear</button>
+                </div>
+            </div>
+
+            <!-- Loader -->
+            <div class="loader" id="loader">
+                <div class="spinner"></div>
+                <p>Processing...</p>
+            </div>
+
+            <!-- Result Container -->
+            <div class="result-container" id="resultContainer">
+                <h3 id="resultTitle">Success!</h3>
+                <p id="resultMessage"></p>
+                <div class="result-url" id="resultUrl" style="display: none;">
+                    <input type="text" id="shareUrl" readonly>
+                    <button onclick="copyToClipboard()">Copy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                
+                // Update active tab
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update active content
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(\`\${tabName}-tab\`).classList.add('active');
+                
+                // Reset result container
+                document.getElementById('resultContainer').style.display = 'none';
+            });
+        });
+
+        // File upload drag and drop
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        let selectedFile = null;
+
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragging');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragging');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragging');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            selectedFile = file;
+            fileName.textContent = \`Name: \${file.name}\`;
+            fileSize.textContent = \`Size: \${formatFileSize(file.size)}\`;
+            fileInfo.style.display = 'block';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+
+        // Upload file button
+        document.getElementById('uploadBtn').addEventListener('click', async () => {
+            if (!selectedFile) {
+                showError('Please select a file to upload');
+                return;
+            }
+
+            const oneTime = document.getElementById('oneTime').checked;
+            
+            showLoader(true);
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', selectedFile);
+                formData.append('oneTime', oneTime);
+                
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showSuccess(\`Your file has been uploaded successfully!\`, data.url);
+                } else {
+                    showError(data.error || 'Upload failed');
+                }
+            } catch (error) {
+                showError('An error occurred during upload');
+            } finally {
+                showLoader(false);
+            }
+        });
+
+        // Share text button
+        document.getElementById('shareTextBtn').addEventListener('click', async () => {
+            const content = document.getElementById('textContent').value;
+            if (!content) {
+                showError('Please enter some text to share');
+                return;
+            }
+
+            const oneTime = document.getElementById('textOneTime').checked;
+            
+            showLoader(true);
+            
+            try {
+                const response = await fetch('/api/text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: content,
+                        oneTime: oneTime
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showSuccess(\`Your text has been shared successfully!\`, data.url);
+                } else {
+                    showError(data.error || 'Sharing failed');
+                }
+            } catch (error) {
+                showError('An error occurred while sharing');
+            } finally {
+                showLoader(false);
+            }
+        });
+
+        // Clear buttons
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            selectedFile = null;
+            fileInput.value = '';
+            fileInfo.style.display = 'none';
+            document.getElementById('oneTime').checked = false;
+        });
+
+        document.getElementById('clearTextBtn').addEventListener('click', () => {
+            document.getElementById('textContent').value = '';
+            document.getElementById('textOneTime').checked = false;
+        });
+
+        // Helper functions
+        function showLoader(show) {
+            document.getElementById('loader').classList.toggle('active', show);
+        }
+
+        function showSuccess(message, url) {
+            const container = document.getElementById('resultContainer');
+            const title = document.getElementById('resultTitle');
+            const messageEl = document.getElementById('resultMessage');
+            const urlContainer = document.getElementById('resultUrl');
+            
+            container.classList.remove('error');
+            container.style.display = 'block';
+            title.textContent = 'Success!';
+            messageEl.textContent = message;
+            
+            if (url) {
+                urlContainer.style.display = 'flex';
+                document.getElementById('shareUrl').value = url;
+            } else {
+                urlContainer.style.display = 'none';
+            }
+        }
+
+        function showError(message) {
+            const container = document.getElementById('resultContainer');
+            const title = document.getElementById('resultTitle');
+            const messageEl = document.getElementById('resultMessage');
+            
+            container.classList.add('error');
+            container.style.display = 'block';
+            title.textContent = 'Error';
+            messageEl.textContent = message;
+            document.getElementById('resultUrl').style.display = 'none';
+        }
+
+        function copyToClipboard() {
+            const input = document.getElementById('shareUrl');
+            input.select();
+            document.execCommand('copy');
+            
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.textContent = 'Copied!';
+            setTimeout(() => {
+                btn.textContent = originalText;
+            }, 2000);
+        }
+    </script>
+</body>
+</html>`;
+}
+
+/**
+ * Handle web upload API
+ */
+async function handleWebUpload(request: Request, env: Env): Promise<Response> {
+  try {
+    const formData = await request.formData();
+    const file = formData.get("file") as File;
+    const oneTime = formData.get("oneTime") === "true";
+
+    if (!file) {
+      return new Response(JSON.stringify({ error: "No file provided" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    const content = await file.arrayBuffer();
+    const id = generateId();
+    const key = oneTime ? `${ONE_TIME_PREFIX}${id}` : id;
+
+    const metadata: PasteMetadata = {
+      contentType: file.type || "application/octet-stream",
+      isOneTime: oneTime,
+      createdAt: Date.now(),
+      filename: file.name,
+    };
+
+    await env.PASTE_BUCKET.put(key, content, {
+      customMetadata: metadata as any,
+    });
+
+    const url = `${new URL(request.url).origin}/${id}/${encodeURIComponent(file.name)}`;
+
+    return new Response(JSON.stringify({ url, id }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Upload failed" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+}
+
+/**
+ * Handle text upload API
+ */
+async function handleTextUpload(request: Request, env: Env): Promise<Response> {
+  try {
+    const body = (await request.json()) as {
+      content: string;
+      oneTime: boolean;
+    };
+    const { content, oneTime } = body;
+
+    if (!content) {
+      return new Response(JSON.stringify({ error: "No content provided" }), {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    const id = generateId();
+    const key = oneTime ? `${ONE_TIME_PREFIX}${id}` : id;
+
+    const metadata: PasteMetadata = {
+      contentType: "text/plain",
+      isOneTime: oneTime,
+      createdAt: Date.now(),
+      filename: "paste.txt",
+    };
+
+    await env.PASTE_BUCKET.put(key, content, {
+      customMetadata: metadata as any,
+    });
+
+    const url = `${new URL(request.url).origin}/${id}/paste.txt`;
+
+    return new Response(JSON.stringify({ url, id }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: "Upload failed" }), {
+      status: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  }
+}
+
+/**
+ * Handle web decrypt API (simplified version without encryption for now)
+ */
+async function handleWebDecrypt(
+  id: string,
+  env: Env,
+  ctx: ExecutionContext,
+  request: Request,
+): Promise<Response> {
+  // For now, just redirect to the regular GET handler
+  // In the future, this would handle decryption with provided keys
+  return await handleGet(id, env, ctx, false, request);
 }
