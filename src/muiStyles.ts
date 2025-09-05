@@ -1193,8 +1193,228 @@ curl -X POST https://paste.d3d.dev/api/paste \\
     </section>
 
     <div class="MuiDivider mb-6"></div>
+  </main>
 
-    <footer class="text-center py-6" style="border-top: 1px solid var(--mui-palette-divider); margin-top: var(--mui-spacing-8); background: var(--mui-palette-background-paper);">
+  <style>
+    @keyframes rotate {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes circular-dash {
+      0% {
+        stroke-dasharray: 1px, 200px;
+        stroke-dashoffset: 0;
+      }
+      50% {
+        stroke-dasharray: 100px, 200px;
+        stroke-dashoffset: -15px;
+      }
+      100% {
+        stroke-dasharray: 100px, 200px;
+        stroke-dashoffset: -125px;
+      }
+    }
+  </style>
+
+  <script>
+    let selectedFile = null;
+
+    // Tab switching
+    function switchTab(tab) {
+      if (tab === 'upload') {
+        document.getElementById('tab-upload').classList.add('Mui-selected');
+        document.getElementById('tab-upload').style.color = 'var(--mui-palette-primary-main)';
+        document.getElementById('tab-upload').style.borderBottom = '2px solid var(--mui-palette-primary-main)';
+        document.getElementById('tab-text').classList.remove('Mui-selected');
+        document.getElementById('tab-text').style.color = 'var(--mui-palette-text-secondary)';
+        document.getElementById('tab-text').style.borderBottom = '2px solid transparent';
+        document.getElementById('upload-tab-content').style.display = 'block';
+        document.getElementById('text-tab-content').style.display = 'none';
+      } else {
+        document.getElementById('tab-text').classList.add('Mui-selected');
+        document.getElementById('tab-text').style.color = 'var(--mui-palette-primary-main)';
+        document.getElementById('tab-text').style.borderBottom = '2px solid var(--mui-palette-primary-main)';
+        document.getElementById('tab-upload').classList.remove('Mui-selected');
+        document.getElementById('tab-upload').style.color = 'var(--mui-palette-text-secondary)';
+        document.getElementById('tab-upload').style.borderBottom = '2px solid transparent';
+        document.getElementById('text-tab-content').style.display = 'block';
+        document.getElementById('upload-tab-content').style.display = 'none';
+      }
+      document.getElementById('resultContainer').style.display = 'none';
+    }
+
+    // File handling
+    document.getElementById('dropZone').addEventListener('click', () => {
+      document.getElementById('fileInput').click();
+    });
+
+    function handleDrop(event) {
+      event.preventDefault();
+      const files = event.dataTransfer.files;
+      if (files.length > 0) {
+        handleFileSelect(files);
+      }
+    }
+
+    function handleFileSelect(files) {
+      if (files.length > 0) {
+        selectedFile = files[0];
+        document.getElementById('fileName').textContent = 'Name: ' + selectedFile.name;
+        document.getElementById('fileSize').textContent = 'Size: ' + formatFileSize(selectedFile.size);
+        document.getElementById('fileInfo').style.display = 'block';
+      }
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    // Upload functions
+    async function uploadFile() {
+      if (!selectedFile) {
+        showError('Please select a file to upload');
+        return;
+      }
+
+      const oneTime = document.getElementById('oneTime').checked;
+      showLoader(true);
+
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('oneTime', oneTime);
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showSuccess('Your file has been uploaded successfully!', data.url);
+        } else {
+          showError(data.error || 'Upload failed');
+        }
+      } catch (error) {
+        showError('An error occurred during upload');
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    async function shareText() {
+      const content = document.getElementById('textContent').value;
+      if (!content) {
+        showError('Please enter some text to share');
+        return;
+      }
+
+      const oneTime = document.getElementById('textOneTime').checked;
+      showLoader(true);
+
+      try {
+        const response = await fetch('/api/text', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            content: content,
+            oneTime: oneTime
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showSuccess('Your text has been shared successfully!', data.url);
+        } else {
+          showError(data.error || 'Sharing failed');
+        }
+      } catch (error) {
+        showError('An error occurred while sharing');
+      } finally {
+        showLoader(false);
+      }
+    }
+
+    // Clear functions
+    function clearUpload() {
+      selectedFile = null;
+      document.getElementById('fileInput').value = '';
+      document.getElementById('fileInfo').style.display = 'none';
+      document.getElementById('oneTime').checked = false;
+      document.getElementById('resultContainer').style.display = 'none';
+    }
+
+    function clearText() {
+      document.getElementById('textContent').value = '';
+      document.getElementById('textOneTime').checked = false;
+      document.getElementById('resultContainer').style.display = 'none';
+    }
+
+    // Helper functions
+    function showLoader(show) {
+      document.getElementById('loader').style.display = show ? 'block' : 'none';
+    }
+
+    function showSuccess(message, url) {
+      const container = document.getElementById('resultContainer');
+      const alert = document.getElementById('resultAlert');
+      const title = document.getElementById('resultTitle');
+      const messageEl = document.getElementById('resultMessage');
+      const urlContainer = document.getElementById('resultUrl');
+
+      alert.className = 'MuiAlert MuiAlert-success';
+      alert.style.background = 'rgba(102, 187, 106, 0.12)';
+      alert.style.color = 'var(--mui-palette-success-main)';
+      container.style.display = 'block';
+      title.textContent = 'Success!';
+      messageEl.textContent = message;
+
+      if (url) {
+        urlContainer.style.display = 'block';
+        document.getElementById('shareUrl').value = url;
+      } else {
+        urlContainer.style.display = 'none';
+      }
+    }
+
+    function showError(message) {
+      const container = document.getElementById('resultContainer');
+      const alert = document.getElementById('resultAlert');
+      const title = document.getElementById('resultTitle');
+      const messageEl = document.getElementById('resultMessage');
+
+      alert.className = 'MuiAlert MuiAlert-error';
+      alert.style.background = 'rgba(244, 67, 54, 0.12)';
+      alert.style.color = 'var(--mui-palette-error-main)';
+      container.style.display = 'block';
+      title.textContent = 'Error';
+      messageEl.textContent = message;
+      document.getElementById('resultUrl').style.display = 'none';
+    }
+
+    function copyToClipboard() {
+      const input = document.getElementById('shareUrl');
+      input.select();
+      document.execCommand('copy');
+
+      const btn = event.target;
+      const originalText = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => {
+        btn.textContent = originalText;
+      }, 2000);
+    }
+  </script>
+
+  <footer class="text-center py-6" style="border-top: 1px solid var(--mui-palette-divider); margin-top: var(--mui-spacing-8); background: var(--mui-palette-background-paper);">
       <div class="MuiContainer">
         <div class="MuiStack MuiStack-row MuiStack-spacing-3" style="justify-content: center; margin-bottom: var(--mui-spacing-3);">
           <a href="https://github.com/anoncam/dedpaste" target="_blank" style="display: flex; align-items: center;">
@@ -1218,6 +1438,5 @@ curl -X POST https://paste.d3d.dev/api/paste \\
         </p>
       </div>
     </footer>
-  </main>
 </body>
 </html>`;
