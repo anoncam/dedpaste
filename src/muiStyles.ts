@@ -984,6 +984,111 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
       </div>
     </section>
 
+    <!-- Upload Section -->
+    <section class="mb-8" style="padding: var(--mui-spacing-4) 0;">
+      <div class="MuiPaper MuiPaper-elevation3" style="padding: var(--mui-spacing-4); background: var(--mui-palette-background-paper-elevated); border-radius: 12px;">
+        <div class="MuiTabs" style="margin-bottom: var(--mui-spacing-4);">
+          <div class="MuiTabs-flexContainer" style="display: flex; border-bottom: 1px solid var(--mui-palette-divider);">
+            <button id="tab-upload" onclick="switchTab('upload')" style="padding: 12px 24px; min-height: 48px; text-transform: none; font-size: 1rem; color: #90caf9; border: none; background: transparent; border-bottom: 2px solid #90caf9; cursor: pointer; transition: all 0.3s;">
+              Upload File
+            </button>
+            <button id="tab-text" onclick="switchTab('text')" style="padding: 12px 24px; min-height: 48px; text-transform: none; font-size: 1rem; color: rgba(255, 255, 255, 0.7); border: none; background: transparent; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.3s;">
+              Share Text
+            </button>
+          </div>
+        </div>
+
+        <!-- Upload Tab Content -->
+        <div id="upload-tab-content" style="display: block;">
+          <div id="dropZone" class="MuiPaper MuiPaper-outlined" style="padding: var(--mui-spacing-6); text-align: center; border: 2px dashed var(--mui-palette-primary-main); border-radius: 8px; cursor: pointer; transition: all 0.3s ease; background: rgba(144, 202, 249, 0.08);" 
+               ondragover="event.preventDefault(); this.style.background='rgba(144, 202, 249, 0.16)'; this.style.borderColor='var(--mui-palette-primary-light)';"
+               ondragleave="this.style.background='rgba(144, 202, 249, 0.08)'; this.style.borderColor='var(--mui-palette-primary-main)';"
+               ondrop="handleDrop(event); this.style.background='rgba(144, 202, 249, 0.08)'; this.style.borderColor='var(--mui-palette-primary-main)';">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" style="width: 64px; height: 64px; color: var(--mui-palette-primary-main); margin-bottom: var(--mui-spacing-2);">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <h3 class="MuiTypography-h6" style="margin-bottom: var(--mui-spacing-1);">Drop your file here or click to browse</h3>
+            <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">Maximum file size: 100MB</p>
+            <input type="file" id="fileInput" style="display: none;" onchange="handleFileSelect(this.files)">
+          </div>
+
+          <div id="fileInfo" style="display: none; margin-top: var(--mui-spacing-3);">
+            <div class="MuiAlert MuiAlert-info" style="padding: var(--mui-spacing-2); background: rgba(41, 182, 246, 0.12); color: var(--mui-palette-info-main); border-radius: 4px;">
+              <h4 class="MuiTypography-subtitle1" style="margin-bottom: 4px;">Selected File</h4>
+              <p id="fileName" style="margin: 0;"></p>
+              <p id="fileSize" style="margin: 0; opacity: 0.8;"></p>
+            </div>
+          </div>
+
+          <div class="MuiFormControl" style="margin-top: var(--mui-spacing-3);">
+            <label class="MuiFormControlLabel" style="display: flex; align-items: center; cursor: pointer;">
+              <input type="checkbox" id="oneTime" class="MuiCheckbox-root" style="margin-right: var(--mui-spacing-1);">
+              <span class="MuiTypography-body1">Delete after first view (one-time link)</span>
+            </label>
+          </div>
+
+          <div class="MuiStack MuiStack-row" style="margin-top: var(--mui-spacing-3); gap: var(--mui-spacing-2);">
+            <button id="uploadBtn" onclick="uploadFile()" style="flex: 1; padding: 12px 24px; background-color: #2196F3; color: #FFFFFF; border: none; border-radius: 4px; font-weight: 500; text-transform: uppercase; cursor: pointer; transition: background-color 0.3s; font-size: 0.875rem; letter-spacing: 0.02857em;" onmouseover="this.style.backgroundColor='#1976D2'" onmouseout="this.style.backgroundColor='#2196F3'">
+              Upload & Create Link
+            </button>
+            <button id="clearBtn" onclick="clearUpload()" style="padding: 12px 24px; background-color: transparent; color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.23); border-radius: 4px; font-weight: 500; text-transform: uppercase; cursor: pointer; transition: all 0.3s; font-size: 0.875rem; letter-spacing: 0.02857em;" onmouseover="this.style.backgroundColor='rgba(255, 255, 255, 0.08)'" onmouseout="this.style.backgroundColor='transparent'">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Text Tab Content -->
+        <div id="text-tab-content" style="display: none;">
+          <div class="MuiFormControl" style="width: 100%;">
+            <label class="MuiInputLabel" style="margin-bottom: var(--mui-spacing-1); color: var(--mui-palette-text-secondary);">Text Content</label>
+            <textarea id="textContent" class="MuiInputBase-root MuiOutlinedInput-root" style="width: 100%; min-height: 200px; padding: var(--mui-spacing-2); background: var(--mui-palette-background-default); border: 1px solid var(--mui-palette-divider); border-radius: 4px; color: var(--mui-palette-text-primary); font-family: 'Roboto Mono', monospace; resize: vertical;" placeholder="Enter or paste your text here..."></textarea>
+          </div>
+
+          <div class="MuiFormControl" style="margin-top: var(--mui-spacing-3);">
+            <label class="MuiFormControlLabel" style="display: flex; align-items: center; cursor: pointer;">
+              <input type="checkbox" id="textOneTime" class="MuiCheckbox-root" style="margin-right: var(--mui-spacing-1);">
+              <span class="MuiTypography-body1">Delete after first view (one-time link)</span>
+            </label>
+          </div>
+
+          <div class="MuiStack MuiStack-row" style="margin-top: var(--mui-spacing-3); gap: var(--mui-spacing-2);">
+            <button id="shareTextBtn" onclick="shareText()" style="flex: 1; padding: 12px 24px; background-color: #2196F3; color: #FFFFFF; border: none; border-radius: 4px; font-weight: 500; text-transform: uppercase; cursor: pointer; transition: background-color 0.3s; font-size: 0.875rem; letter-spacing: 0.02857em;" onmouseover="this.style.backgroundColor='#1976D2'" onmouseout="this.style.backgroundColor='#2196F3'">
+              Create Shareable Link
+            </button>
+            <button id="clearTextBtn" onclick="clearText()" style="padding: 12px 24px; background-color: transparent; color: #FFFFFF; border: 1px solid rgba(255, 255, 255, 0.23); border-radius: 4px; font-weight: 500; text-transform: uppercase; cursor: pointer; transition: all 0.3s; font-size: 0.875rem; letter-spacing: 0.02857em;" onmouseover="this.style.backgroundColor='rgba(255, 255, 255, 0.08)'" onmouseout="this.style.backgroundColor='transparent'">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader" style="display: none; text-align: center; padding: var(--mui-spacing-4);">
+          <div class="MuiCircularProgress" style="width: 40px; height: 40px; margin: 0 auto var(--mui-spacing-2); animation: rotate 1.4s linear infinite;">
+            <svg viewBox="22 22 44 44">
+              <circle cx="44" cy="44" r="20.2" fill="none" stroke="currentColor" stroke-width="3.6" stroke-dasharray="80px, 200px" stroke-dashoffset="0" style="animation: circular-dash 1.4s ease-in-out infinite; color: var(--mui-palette-primary-main);"></circle>
+            </svg>
+          </div>
+          <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">Processing...</p>
+        </div>
+
+        <!-- Result Container -->
+        <div id="resultContainer" style="display: none; margin-top: var(--mui-spacing-3);">
+          <div id="resultAlert" class="MuiAlert" style="padding: var(--mui-spacing-2); border-radius: 4px;">
+            <h4 id="resultTitle" class="MuiTypography-subtitle1" style="margin-bottom: 4px;"></h4>
+            <p id="resultMessage" style="margin: 0;"></p>
+            <div id="resultUrl" style="display: none; margin-top: var(--mui-spacing-2);">
+              <div class="MuiStack MuiStack-row" style="gap: var(--mui-spacing-1);">
+                <input id="shareUrl" type="text" class="MuiInputBase-root MuiOutlinedInput-root" style="flex: 1; padding: 8px 12px; background: var(--mui-palette-background-default); border: 1px solid var(--mui-palette-divider); border-radius: 4px; font-family: 'Roboto Mono', monospace; color: #9c27b0;" readonly>
+                <button onclick="copyToClipboard()" style="padding: 8px 16px; background-color: #2196F3; color: #FFFFFF; border: none; border-radius: 4px; font-weight: 500; text-transform: uppercase; cursor: pointer; transition: background-color 0.3s; font-size: 0.875rem; letter-spacing: 0.02857em;" onmouseover="this.style.backgroundColor='#1976D2'" onmouseout="this.style.backgroundColor='#2196F3'">Copy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div class="MuiDivider mb-6"></div>
 
     <section id="install" class="mb-8">
@@ -1222,20 +1327,16 @@ curl -X POST https://paste.d3d.dev/api/paste \\
     // Tab switching
     function switchTab(tab) {
       if (tab === 'upload') {
-        document.getElementById('tab-upload').classList.add('Mui-selected');
-        document.getElementById('tab-upload').style.color = 'var(--mui-palette-primary-main)';
-        document.getElementById('tab-upload').style.borderBottom = '2px solid var(--mui-palette-primary-main)';
-        document.getElementById('tab-text').classList.remove('Mui-selected');
-        document.getElementById('tab-text').style.color = 'var(--mui-palette-text-secondary)';
+        document.getElementById('tab-upload').style.color = '#90caf9';
+        document.getElementById('tab-upload').style.borderBottom = '2px solid #90caf9';
+        document.getElementById('tab-text').style.color = 'rgba(255, 255, 255, 0.7)';
         document.getElementById('tab-text').style.borderBottom = '2px solid transparent';
         document.getElementById('upload-tab-content').style.display = 'block';
         document.getElementById('text-tab-content').style.display = 'none';
       } else {
-        document.getElementById('tab-text').classList.add('Mui-selected');
-        document.getElementById('tab-text').style.color = 'var(--mui-palette-primary-main)';
-        document.getElementById('tab-text').style.borderBottom = '2px solid var(--mui-palette-primary-main)';
-        document.getElementById('tab-upload').classList.remove('Mui-selected');
-        document.getElementById('tab-upload').style.color = 'var(--mui-palette-text-secondary)';
+        document.getElementById('tab-text').style.color = '#90caf9';
+        document.getElementById('tab-text').style.borderBottom = '2px solid #90caf9';
+        document.getElementById('tab-upload').style.color = 'rgba(255, 255, 255, 0.7)';
         document.getElementById('tab-upload').style.borderBottom = '2px solid transparent';
         document.getElementById('text-tab-content').style.display = 'block';
         document.getElementById('upload-tab-content').style.display = 'none';
