@@ -42,6 +42,9 @@ try {
   };
 }
 
+// Import analytics
+import { analytics } from './analytics.js';
+
 // Import our core modules
 import {
   generateKeyPair,
@@ -212,11 +215,14 @@ program
   .description('Manage encryption keys in enhanced interactive TUI mode')
   .action(async () => {
     try {
+      // Track command execution
+      analytics.trackCommand('keys:enhanced');
+
       const __filename = fileURLToPath(import.meta.url);
       const __dirname = path.dirname(__filename);
-      
+
       const enhancedLauncherPath = path.join(__dirname, 'enhancedModeLauncher.js');
-      
+
       console.log('Starting enhanced mode...');
       
       // Spawn the launcher as a separate process
@@ -325,22 +331,26 @@ Key Storage:
 `)
   .action(async (options: KeysOptions) => {
     try {
+      // Track command execution
+      const flags = Object.keys(options).filter(k => (options as any)[k] !== undefined);
+      analytics.trackCommand('keys', undefined, flags);
+
       // Initialize logger based on options
       let logLevel = 'info';
       if (options.verbose) logLevel = 'debug';
       if (options.debug) logLevel = 'trace';
       if (options.logLevel) logLevel = options.logLevel;
-      
+
       const logOptions = {
         level: logLevel,
         logToFile: options.logFile !== false,
         logFile: typeof options.logFile === 'string' ? options.logFile : 'dedpaste.log'
       };
-      
+
       // Import and initialize logger
       const { initialize: initLogger } = await import('./logger.js');
       const logger = await initLogger(logOptions);
-      
+
       // Log the start of execution
       logger.info('Starting key management operation', { options });
       
@@ -866,13 +876,15 @@ Key Storage:
       // Generate a new key pair
       if (options.genKey) {
         logger.debug('Generating new key pair');
-        
+
         const { privateKeyPath, publicKeyPath } = await generateKeyPair();
         console.log(`
 ✓ Generated new key pair:
   - Private key: ${privateKeyPath}
   - Public key: ${publicKeyPath}
 `);
+        // Track key generation
+        analytics.trackKeyOperation('generated', { key_type: 'RSA' });
         return;
       }
       
@@ -1159,7 +1171,16 @@ Encryption:
         }
         
         const url = await response.text();
-        
+
+        // Track paste creation
+        analytics.trackPasteCreated({
+          type: options.temp ? 'one_time' : 'regular',
+          content_type: contentType,
+          size_bytes: content.length,
+          encryption_type: options.encrypt ? 'RSA' : 'none',
+          method: options.file ? 'file' : 'stdin'
+        });
+
         // Copy to clipboard if requested
         if (options.copy) {
           try {
@@ -1792,7 +1813,16 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
         }
         
         const url = await response.text();
-        
+
+        // Track paste creation
+        analytics.trackPasteCreated({
+          type: options.temp ? 'one_time' : 'regular',
+          content_type: contentType,
+          size_bytes: content.length,
+          encryption_type: options.encrypt ? 'RSA' : 'none',
+          method: options.file ? 'file' : 'stdin'
+        });
+
         // Copy to clipboard if requested
         if (options.copy) {
           try {
