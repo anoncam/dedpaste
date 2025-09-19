@@ -21,6 +21,9 @@ import php from "highlight.js/lib/languages/php";
 // Import MUI styles
 import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from "./muiStyles";
 
+// Import analytics
+import { createAnalytics, WorkerAnalytics } from "./analytics";
+
 // Register languages with highlight.js
 hljs.registerLanguage("javascript", javascript);
 hljs.registerLanguage("typescript", typescript);
@@ -106,6 +109,9 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
+    // Initialize analytics
+    const analytics = createAnalytics(env);
+
     // Initialize viewedPastes from KV store if available (completely optional enhancement)
     try {
       if (env.PASTE_METADATA) {
@@ -152,13 +158,13 @@ export default {
       // Handle regular uploads
       if (path === "/upload" || path === "/temp") {
         const isOneTime = path === "/temp";
-        return await handleUpload(request, env, isOneTime, false);
+        return await handleUpload(request, env, isOneTime, false, analytics);
       }
 
       // Handle encrypted uploads
       if (path === "/e/upload" || path === "/e/temp") {
         const isOneTime = path === "/e/temp";
-        return await handleUpload(request, env, isOneTime, true);
+        return await handleUpload(request, env, isOneTime, true, analytics);
       }
 
       return new Response("Not found", { status: 404 });
@@ -205,6 +211,9 @@ export default {
 
       // Serve the HTML homepage
       if (path === "/") {
+        // Track homepage view
+        await analytics.trackHomepageView(request);
+
         return new Response(generateHomepage(url.origin), {
           headers: {
             "Content-Type": "text/html",
@@ -520,6 +529,7 @@ async function handleUpload(
   env: Env,
   isOneTime: boolean,
   isEncrypted: boolean,
+  analytics?: WorkerAnalytics,
 ): Promise<Response> {
   const contentType = request.headers.get("Content-Type") || "text/plain";
   const filename = request.headers.get("X-Filename") || "";
@@ -590,6 +600,16 @@ async function handleUpload(
     pasteUrl = isEncrypted
       ? `${baseUrl}/e/${id}${extension}`
       : `${baseUrl}/${id}${extension}`;
+  }
+
+  // Track paste creation
+  if (analytics) {
+    await analytics.trackPasteCreated(request, {
+      is_encrypted: isEncrypted,
+      is_one_time: isOneTime,
+      content_type: contentType,
+      size_bytes: content.byteLength,
+    });
   }
 
   // Return the paste URL - we always use the unprefixed ID in the URL

@@ -287,6 +287,7 @@ You can configure the CLI using environment variables:
   export DEDPASTE_API_URL="https://your-worker.example.com"
   ```
 
+
 ## 🎨 UI Development
 
 The web interface uses **Material-UI (MUI)** design system for a modern, responsive experience. The UI features:

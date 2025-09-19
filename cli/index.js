@@ -31,6 +31,8 @@ catch (error) {
         }
     };
 }
+// Import analytics
+import { analytics } from './analytics.js';
 // Import our core modules
 import { generateKeyPair, addFriendKey, listKeys, getKey, removeKey, loadKeyDatabase, saveKeyDatabase, ensureDirectories } from './keyManager.js';
 import { encryptContent, decryptContent } from './encryptionUtils.js';
@@ -78,6 +80,8 @@ program
     .description('Manage encryption keys in enhanced interactive TUI mode')
     .action(async () => {
     try {
+        // Track command execution
+        analytics.trackCommand('keys:enhanced');
         const __filename = fileURLToPath(import.meta.url);
         const __dirname = path.dirname(__filename);
         const enhancedLauncherPath = path.join(__dirname, 'enhancedModeLauncher.js');
@@ -185,6 +189,9 @@ Key Storage:
 `)
     .action(async (options) => {
     try {
+        // Track command execution
+        const flags = Object.keys(options).filter(k => options[k] !== undefined);
+        analytics.trackCommand('keys', undefined, flags);
         // Initialize logger based on options
         let logLevel = 'info';
         if (options.verbose)
@@ -652,6 +659,8 @@ Key Storage:
   - Private key: ${privateKeyPath}
   - Public key: ${publicKeyPath}
 `);
+            // Track key generation
+            analytics.trackKeyOperation('generated', { key_type: 'RSA' });
             return;
         }
         // Output public key to console
@@ -913,6 +922,14 @@ Encryption:
                 process.exit(1);
             }
             const url = await response.text();
+            // Track paste creation
+            analytics.trackPasteCreated({
+                type: options.temp ? 'one_time' : 'regular',
+                content_type: contentType,
+                size_bytes: content.length,
+                encryption_type: options.encrypt ? 'RSA' : 'none',
+                method: options.file ? 'file' : 'stdin'
+            });
             // Copy to clipboard if requested
             if (options.copy) {
                 try {
@@ -1504,6 +1521,14 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
                 process.exit(1);
             }
             const url = await response.text();
+            // Track paste creation
+            analytics.trackPasteCreated({
+                type: options.temp ? 'one_time' : 'regular',
+                content_type: contentType,
+                size_bytes: content.length,
+                encryption_type: options.encrypt ? 'RSA' : 'none',
+                method: options.file ? 'file' : 'stdin'
+            });
             // Copy to clipboard if requested
             if (options.copy) {
                 try {
