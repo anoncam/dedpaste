@@ -907,12 +907,19 @@ Encryption:
         }
         // Make the API request
         try {
+            // Extract filename if uploading a file
+            const filename = options.file ? path.basename(options.file) : '';
+            const headers = {
+                'Content-Type': contentType,
+                'User-Agent': `dedpaste-cli/${packageJson.version}`
+            };
+            // Include filename header if we have a file
+            if (filename) {
+                headers['X-Filename'] = filename;
+            }
             const response = await fetch(`${API_URL}${endpoint}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': contentType,
-                    'User-Agent': `dedpaste-cli/${packageJson.version}`
-                },
+                headers,
                 body: content
             });
             if (!response.ok) {
@@ -1451,13 +1458,20 @@ program
             // Determine the endpoint for encrypted pastes
             const endpoint = options.temp ? '/e/temp' : '/e/upload';
             try {
+                // Extract filename if uploading a file
+                const filename = options.file ? path.basename(options.file) : '';
+                const headers = {
+                    'Content-Type': contentType,
+                    'User-Agent': `dedpaste-cli/${packageJson.version}`
+                };
+                // Include filename header if we have a file
+                if (filename) {
+                    headers['X-Filename'] = filename;
+                }
                 // Make the API request
                 const response = await fetch(`${API_URL}${endpoint}`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': contentType,
-                        'User-Agent': `dedpaste-cli/${packageJson.version}`
-                    },
+                    headers,
                     body: content
                 });
                 if (!response.ok) {
@@ -1505,13 +1519,20 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
         // Determine the endpoint based on whether it's a temporary paste
         const endpoint = options.temp ? '/temp' : '/upload';
         try {
+            // Extract filename if uploading a file
+            const filename = options.file ? path.basename(options.file) : '';
+            const headers = {
+                'Content-Type': contentType,
+                'User-Agent': `dedpaste-cli/${packageJson.version}`
+            };
+            // Include filename header if we have a file
+            if (filename) {
+                headers['X-Filename'] = filename;
+            }
             // Make the API request
             const response = await fetch(`${API_URL}${endpoint}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': contentType,
-                    'User-Agent': `dedpaste-cli/${packageJson.version}`
-                },
+                headers,
                 body: content
             });
             if (!response.ok) {

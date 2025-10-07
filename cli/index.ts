@@ -1154,12 +1154,22 @@ Encryption:
       
       // Make the API request
       try {
+        // Extract filename if uploading a file
+        const filename = options.file ? path.basename(options.file) : '';
+
+        const headers: Record<string, string> = {
+          'Content-Type': contentType,
+          'User-Agent': `dedpaste-cli/${packageJson.version}`
+        };
+
+        // Include filename header if we have a file
+        if (filename) {
+          headers['X-Filename'] = filename;
+        }
+
         const response = await fetch(`${API_URL}${endpoint}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': contentType,
-            'User-Agent': `dedpaste-cli/${packageJson.version}`
-          },
+          headers,
           body: content
         });
         
@@ -1739,13 +1749,23 @@ program
         const endpoint = options.temp ? '/e/temp' : '/e/upload';
         
         try {
+          // Extract filename if uploading a file
+          const filename = options.file ? path.basename(options.file) : '';
+
+          const headers: Record<string, string> = {
+            'Content-Type': contentType,
+            'User-Agent': `dedpaste-cli/${packageJson.version}`
+          };
+
+          // Include filename header if we have a file
+          if (filename) {
+            headers['X-Filename'] = filename;
+          }
+
           // Make the API request
           const response = await fetch(`${API_URL}${endpoint}`, {
             method: 'POST',
-            headers: {
-              'Content-Type': contentType,
-              'User-Agent': `dedpaste-cli/${packageJson.version}`
-            },
+            headers,
             body: content
           });
           
@@ -1795,13 +1815,23 @@ ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
       const endpoint = options.temp ? '/temp' : '/upload';
       
       try {
+        // Extract filename if uploading a file
+        const filename = options.file ? path.basename(options.file) : '';
+
+        const headers: Record<string, string> = {
+          'Content-Type': contentType,
+          'User-Agent': `dedpaste-cli/${packageJson.version}`
+        };
+
+        // Include filename header if we have a file
+        if (filename) {
+          headers['X-Filename'] = filename;
+        }
+
         // Make the API request
         const response = await fetch(`${API_URL}${endpoint}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': contentType,
-            'User-Agent': `dedpaste-cli/${packageJson.version}`
-          },
+          headers,
           body: content
         });
         
