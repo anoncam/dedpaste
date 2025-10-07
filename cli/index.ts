@@ -1225,6 +1225,9 @@ ${encryptionMessage}
 ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
 `);
         }
+
+        // Exit successfully
+        process.exit(0);
       } catch (error: any) {
         console.error(`Network error: ${error.message}`);
         console.error('If you just want to test encryption without uploading, use the --debug flag');
@@ -1804,7 +1807,9 @@ ${options.temp ? '⚠️  This is a one-time paste that will be deleted after fi
 ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
 `);
           }
-          return;
+
+          // Exit successfully
+          process.exit(0);
         } catch (error: any) {
           console.error(`Network error: ${error.message}`);
           process.exit(1);
@@ -1877,6 +1882,9 @@ ${options.temp ? '⚠️  This is a one-time paste that will be deleted after fi
 ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
 `);
         }
+
+        // Exit successfully
+        process.exit(0);
       } catch (error: any) {
         console.error(`Network error: ${error.message}`);
         process.exit(1);
