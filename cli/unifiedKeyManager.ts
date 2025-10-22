@@ -65,7 +65,7 @@ export interface ExecResult {
 }
 
 export interface ImportOptions {
-  source: 'file' | 'pgp-server' | 'keybase' | 'gpg-import' | 'gpg-keyring';
+  source: 'file' | 'pgp-server' | 'keybase' | 'github' | 'gpg-import' | 'gpg-keyring';
   content?: string;
   name?: string;
   file?: string;

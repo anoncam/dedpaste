@@ -169,21 +169,28 @@ export async function addGitHubKey(
   // Generate key name
   const keyName = customName || `github:${sanitizedUsername}`;
 
+  // Map the PGP key info to GitHub key format
+  // importPgpKey returns keyId, but we use it as fingerprint for GitHub keys
+  const githubKeyInfo = {
+    fingerprint: keyInfo.keyId,
+    email: keyInfo.email ?? undefined
+  };
+
   // Add to key manager
-  await addGitHubKeyToManager(keyName, sanitizedUsername, keyInfo, gpgKeyData);
+  await addGitHubKeyToManager(keyName, sanitizedUsername, githubKeyInfo, gpgKeyData);
 
   if (!silent) {
     console.log(`✓ GitHub key added: ${keyName}`);
-    console.log(`  Fingerprint: ${keyInfo.fingerprint}`);
-    if (keyInfo.email) {
-      console.log(`  Email: ${keyInfo.email}`);
+    console.log(`  Fingerprint: ${githubKeyInfo.fingerprint}`);
+    if (githubKeyInfo.email) {
+      console.log(`  Email: ${githubKeyInfo.email}`);
     }
   }
 
   return {
     name: keyName,
-    fingerprint: keyInfo.fingerprint,
-    email: keyInfo.email
+    fingerprint: githubKeyInfo.fingerprint,
+    email: githubKeyInfo.email
   };
 }
 

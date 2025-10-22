@@ -125,6 +125,8 @@ interface KeysOptions {
   nativePgp?: boolean;
   keybase?: string;
   keybaseName?: string;
+  github?: string;
+  githubName?: string;
   verify?: boolean;
   verbose?: boolean;
   debug?: boolean;
