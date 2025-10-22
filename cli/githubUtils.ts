@@ -196,14 +196,16 @@ export async function addGitHubKey(
 
 /**
  * Fetch GitHub key just-in-time (used during encryption)
- * Checks if key exists in database, fetches if not
+ * Checks if key exists in database, fetches if not or if stale
  * @param username GitHub username (without github: prefix)
  * @param silent Whether to suppress console output
+ * @param forceRefresh Whether to force refresh even if cached
  * @returns Key name and metadata
  */
 export async function ensureGitHubKey(
   username: string,
-  silent: boolean = false
+  silent: boolean = false,
+  forceRefresh: boolean = false
 ): Promise<{ name: string; fingerprint: string; email?: string }> {
   const keyName = `github:${username}`;
 
@@ -211,19 +213,32 @@ export async function ensureGitHubKey(
   const { getKey } = await import('./keyManager.js');
   const existingKey = await getKey('github', keyName);
 
-  if (existingKey) {
-    if (!silent) {
-      console.log(`Using cached GitHub key: ${keyName}`);
+  if (existingKey && !forceRefresh) {
+    // Check if key is stale (older than 24 hours)
+    const lastFetched = existingKey.lastFetched ? new Date(existingKey.lastFetched) : null;
+    const now = new Date();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+    const isStale = lastFetched ? (now.getTime() - lastFetched.getTime() > maxAge) : true;
+
+    if (!isStale) {
+      if (!silent) {
+        console.log(`Using cached GitHub key: ${keyName}`);
+      }
+      return {
+        name: keyName,
+        fingerprint: existingKey.fingerprint,
+        email: existingKey.email
+      };
+    } else {
+      if (!silent) {
+        console.log(`Cached GitHub key is stale, refreshing from GitHub...`);
+      }
     }
-    return {
-      name: keyName,
-      fingerprint: existingKey.fingerprint,
-      email: existingKey.email
-    };
   }
 
-  // Key doesn't exist, fetch it
-  if (!silent) {
+  // Key doesn't exist or is stale, fetch it
+  if (!existingKey && !silent) {
     console.log(`GitHub key not found locally, fetching from GitHub...`);
   }
 

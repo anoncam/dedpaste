@@ -151,6 +151,7 @@ interface SendOptions {
   pgp?: boolean;
   pgpKeyFile?: string;
   pgpArmor?: boolean;
+  refreshGithubKeys?: boolean;
 }
 
 interface GetOptions {
@@ -302,6 +303,7 @@ program
   // GitHub options
   .option('--github <username>', 'Fetch and add a GitHub user\'s GPG public key')
   .option('--github-name <name>', 'Custom name for the GitHub user\'s key (optional)')
+  .option('--refresh-github-keys', 'Force refresh of cached GitHub keys (re-fetch from GitHub)')
   // Debugging and logging options
   .option('--verbose', 'Enable verbose logging (same as --log-level debug)')
   .option('--debug', 'Enable debug mode with extensive logging (same as --log-level trace)')
@@ -906,6 +908,7 @@ Key Storage:
   - Email: ${result.email || 'Not specified'}
   - Fingerprint: ${result.fingerprint}
 `);
+          process.exit(0);
         } catch (error: any) {
           logger.error('Failed to fetch GitHub key', { error: error.message });
           console.error(`Error fetching GitHub key: ${error.message}`);
@@ -983,6 +986,7 @@ program
   .option('--pgp', 'Use PGP encryption instead of hybrid RSA/AES')
   .option('--pgp-key-file <path>', 'Use a specific PGP public key file for encryption')
   .option('--pgp-armor', 'Output ASCII-armored PGP instead of binary format')
+  .option('--refresh-github-keys', 'Force refresh of cached GitHub keys when encrypting')
   .addHelpText('after', `
 Examples:
   $ echo "Secret message" | dedpaste send --encrypt                # Encrypt for yourself (RSA/AES)
@@ -1154,7 +1158,12 @@ Encryption:
             content = typeof pgpResult === 'string' ? Buffer.from(pgpResult) : pgpResult;
           } else {
             // Use the standard encryption flow with PGP option
-            const encryptResult = await encryptContent(content.toString('utf8'), recipientName, usePgp);
+            const encryptResult = await encryptContent(
+              content.toString('utf8'),
+              recipientName,
+              usePgp,
+              options.refreshGithubKeys
+            );
             content = typeof encryptResult === 'string' ? Buffer.from(encryptResult) : encryptResult;
           }
           
