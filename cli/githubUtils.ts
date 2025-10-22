@@ -155,15 +155,9 @@ export async function addGitHubKey(
   }
 
   // Fetch GPG key
-  if (!silent) {
-    console.log(`Fetching GPG key for GitHub user: ${sanitizedUsername}...`);
-  }
   const gpgKeyData = await fetchGitHubGpgKey(sanitizedUsername);
 
   // Import and validate PGP key
-  if (!silent) {
-    console.log(`Importing PGP key...`);
-  }
   const keyInfo = await importPgpKey(gpgKeyData);
 
   // Generate key name
@@ -222,24 +216,12 @@ export async function ensureGitHubKey(
     const isStale = lastFetched ? (now.getTime() - lastFetched.getTime() > maxAge) : true;
 
     if (!isStale) {
-      if (!silent) {
-        console.log(`Using cached GitHub key: ${keyName}`);
-      }
       return {
         name: keyName,
         fingerprint: existingKey.fingerprint,
         email: existingKey.email
       };
-    } else {
-      if (!silent) {
-        console.log(`Cached GitHub key is stale, refreshing from GitHub...`);
-      }
     }
-  }
-
-  // Key doesn't exist or is stale, fetch it
-  if (!existingKey && !silent) {
-    console.log(`GitHub key not found locally, fetching from GitHub...`);
   }
 
   return await addGitHubKey(username, undefined, false, silent);

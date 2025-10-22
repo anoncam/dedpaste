@@ -62,12 +62,6 @@ export async function encryptContent(
       if (!friendKey && recipientName.startsWith('github:')) {
         const username = recipientName.replace('github:', '');
 
-        if (!refreshGithubKeys) {
-          console.log(`GitHub key not found locally, fetching from GitHub...`);
-        } else {
-          console.log(`Refreshing GitHub key from GitHub...`);
-        }
-
         try {
           const { ensureGitHubKey } = await import('./githubUtils.js');
           await ensureGitHubKey(username, false, refreshGithubKeys);
@@ -90,7 +84,6 @@ export async function encryptContent(
       // Also check if we should refresh an existing GitHub key
       if (friendKey && recipientName.startsWith('github:') && refreshGithubKeys) {
         const username = recipientName.replace('github:', '');
-        console.log(`Force refreshing GitHub key for ${username}...`);
 
         try {
           const { ensureGitHubKey } = await import('./githubUtils.js');
@@ -100,7 +93,6 @@ export async function encryptContent(
           friendKey = await getKey('any', recipientName);
         } catch (error: any) {
           console.warn(`Warning: Failed to refresh GitHub key, using cached version`);
-          console.warn(`Error: ${error.message}`);
         }
       }
 
