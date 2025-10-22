@@ -12,6 +12,7 @@ export const FRIENDS_KEY_DIR = path.join(homedir(), '.dedpaste', 'friends');
 export const KEY_DB_PATH = path.join(homedir(), '.dedpaste', 'keydb.json');
 export const PGP_KEY_DIR = path.join(homedir(), '.dedpaste', 'pgp');
 export const KEYBASE_KEY_DIR = path.join(homedir(), '.dedpaste', 'keybase');
+export const GITHUB_KEY_DIR = path.join(homedir(), '.dedpaste', 'github');
 
 // Directory structure interface
 interface KeyDirectories {
@@ -19,6 +20,7 @@ interface KeyDirectories {
   FRIENDS_KEY_DIR: string;
   PGP_KEY_DIR: string;
   KEYBASE_KEY_DIR: string;
+  GITHUB_KEY_DIR: string;
 }
 
 // Ensure directories exist
@@ -27,7 +29,8 @@ export async function ensureDirectories(): Promise<KeyDirectories> {
   await fsPromises.mkdir(FRIENDS_KEY_DIR, { recursive: true });
   await fsPromises.mkdir(PGP_KEY_DIR, { recursive: true });
   await fsPromises.mkdir(KEYBASE_KEY_DIR, { recursive: true });
-  return { DEFAULT_KEY_DIR, FRIENDS_KEY_DIR, PGP_KEY_DIR, KEYBASE_KEY_DIR };
+  await fsPromises.mkdir(GITHUB_KEY_DIR, { recursive: true });
+  return { DEFAULT_KEY_DIR, FRIENDS_KEY_DIR, PGP_KEY_DIR, KEYBASE_KEY_DIR, GITHUB_KEY_DIR };
 }
 
 // Initialize key database if it doesn't exist
@@ -38,20 +41,21 @@ async function initKeyDatabase(): Promise<KeyDatabase> {
         self: null,
         friends: {},
         pgp: {},
-        keybase: {}
+        keybase: {},
+        github: {}
       },
       default_friend: null,
       last_used: null
     };
-    
+
     await fsPromises.writeFile(KEY_DB_PATH, JSON.stringify(defaultDb, null, 2));
     return defaultDb;
   }
-  
+
   // Read existing database
   const dbContent = await fsPromises.readFile(KEY_DB_PATH, 'utf8');
   const db = JSON.parse(dbContent) as KeyDatabase;
-  
+
   // Ensure new properties exist (for upgrades)
   if (!db.keys.pgp) {
     db.keys.pgp = {};
@@ -59,7 +63,10 @@ async function initKeyDatabase(): Promise<KeyDatabase> {
   if (!db.keys.keybase) {
     db.keys.keybase = {};
   }
-  
+  if (!db.keys.github) {
+    db.keys.github = {};
+  }
+
   return db;
 }
 
@@ -179,14 +186,17 @@ export async function getKey(type: string, name?: string): Promise<KeyInfo | nul
     return db.keys.pgp[name] || null;
   } else if (type === 'keybase' && name) {
     return db.keys.keybase[name] || null;
+  } else if (type === 'github' && name) {
+    return db.keys.github[name] || null;
   } else if (type === 'any' && name) {
     // Try to find the key in any of the collections
-    return db.keys.friends[name] || 
-           db.keys.pgp[name] || 
-           db.keys.keybase[name] || 
+    return db.keys.friends[name] ||
+           db.keys.pgp[name] ||
+           db.keys.keybase[name] ||
+           db.keys.github[name] ||
            null;
   }
-  
+
   return null;
 }
 
@@ -229,6 +239,16 @@ export async function removeKey(type: string, name: string): Promise<boolean> {
     
     await saveKeyDatabase(db);
     return true;
+  } else if (type === 'github' && db.keys.github[name]) {
+    // Remove the key file
+    const githubPath = typeof db.keys.github[name].path === 'string' ? db.keys.github[name].path : db.keys.github[name].path.public;
+    await fsPromises.unlink(githubPath);
+
+    // Remove from database
+    delete db.keys.github[name];
+
+    await saveKeyDatabase(db);
+    return true;
   } else if (type === 'any') {
     // Try to remove from any collection
     if (db.keys.friends[name]) {
@@ -237,9 +257,11 @@ export async function removeKey(type: string, name: string): Promise<boolean> {
       return await removeKey('pgp', name);
     } else if (db.keys.keybase[name]) {
       return await removeKey('keybase', name);
+    } else if (db.keys.github[name]) {
+      return await removeKey('github', name);
     }
   }
-  
+
   return false;
 }
 
@@ -307,10 +329,10 @@ interface KeybaseKeyAddInfo {
 export async function addKeybaseKey(name: string, keyInfo: KeybaseKeyAddInfo): Promise<string> {
   const { KEYBASE_KEY_DIR } = await ensureDirectories();
   const keyPath = path.join(KEYBASE_KEY_DIR, `${name}.asc`);
-  
+
   // Write key to file
   await fsPromises.writeFile(keyPath, keyInfo.key);
-  
+
   // Update key database
   const db = await loadKeyDatabase();
   db.keys.keybase[name] = {
@@ -323,7 +345,52 @@ export async function addKeybaseKey(name: string, keyInfo: KeybaseKeyAddInfo): P
     addedDate: new Date().toISOString(),
     lastUsed: new Date().toISOString()
   };
-  
+
+  await saveKeyDatabase(db);
+  return keyPath;
+}
+
+// GitHub key information interface
+interface GitHubKeyAddInfo {
+  fingerprint: string;
+  email?: string;
+  created?: Date;
+}
+
+/**
+ * Add a GitHub key to the database
+ * @param name - Name for the key (e.g., "github:username")
+ * @param username - GitHub username
+ * @param keyInfo - Key information from PGP import
+ * @param keyData - Raw PGP key data
+ * @returns Path to the stored key
+ */
+export async function addGitHubKey(
+  name: string,
+  username: string,
+  keyInfo: GitHubKeyAddInfo,
+  keyData: string
+): Promise<string> {
+  const { GITHUB_KEY_DIR } = await ensureDirectories();
+  const keyPath = path.join(GITHUB_KEY_DIR, `${name}.asc`);
+
+  // Write key to file
+  await fsPromises.writeFile(keyPath, keyData);
+
+  // Update key database
+  const db = await loadKeyDatabase();
+  db.keys.github[name] = {
+    type: 'github',
+    name: name,
+    path: keyPath,
+    username: username,
+    fingerprint: keyInfo.fingerprint,
+    email: keyInfo.email,
+    created: keyInfo.created,
+    addedDate: new Date().toISOString(),
+    lastUsed: new Date().toISOString()
+  };
+
   await saveKeyDatabase(db);
   return keyPath;
 }

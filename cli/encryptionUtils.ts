@@ -54,8 +54,25 @@ export async function encryptContent(
     let keyType: 'standard' | 'pgp' = 'standard';
     
     if (recipientName) {
-      // Try to find the key in any key store (friend, PGP, or Keybase)
-      const friendKey = await getKey('any', recipientName);
+      // Try to find the key in any key store (friend, PGP, Keybase, or GitHub)
+      let friendKey = await getKey('any', recipientName);
+
+      // If not found and it starts with "github:", try to fetch it just-in-time
+      if (!friendKey && recipientName.startsWith('github:')) {
+        const username = recipientName.replace('github:', '');
+        console.log(`GitHub key not found locally, fetching from GitHub...`);
+
+        try {
+          const { ensureGitHubKey } = await import('./githubUtils.js');
+          await ensureGitHubKey(username, false);
+
+          // Try to get the key again after fetching
+          friendKey = await getKey('any', recipientName);
+        } catch (error: any) {
+          throw new Error(`Failed to fetch GitHub key for ${username}: ${error.message}`);
+        }
+      }
+
       if (!friendKey) {
         throw new Error(`Recipient "${recipientName}" not found in key database`);
       }
@@ -75,9 +92,21 @@ export async function encryptContent(
         keyType = 'pgp'; // Keybase keys are also PGP keys
         const keyPath = typeof friendKey.path === 'string' ? friendKey.path : friendKey.path.public;
         publicKey = await fsPromises.readFile(keyPath, 'utf8');
-        
+
         recipientInfo = {
           type: 'keybase',
+          name: recipientName,
+          fingerprint: friendKey.fingerprint,
+          username: friendKey.username,
+          email: friendKey.email
+        };
+      } else if (friendKey.type === 'github') {
+        keyType = 'pgp'; // GitHub keys are also PGP keys
+        const keyPath = typeof friendKey.path === 'string' ? friendKey.path : friendKey.path.public;
+        publicKey = await fsPromises.readFile(keyPath, 'utf8');
+
+        recipientInfo = {
+          type: 'github',
           name: recipientName,
           fingerprint: friendKey.fingerprint,
           username: friendKey.username,

@@ -11,6 +11,7 @@ import chalk from 'chalk';
 import * as keyManager from './keyManager.js';
 import * as pgpUtils from './pgpUtils.js';
 import * as keybaseUtils from './keybaseUtils.js';
+import * as githubUtils from './githubUtils.js';
 import { checkGpgKeyring, findKeysMatchingCriteria } from './keyDiagnostics.js';
 import { KeyDatabase, KeyInfo } from '../src/types/index.js';
 
@@ -19,6 +20,7 @@ export const KEY_TYPES = {
   RSA: 'rsa',
   PGP: 'pgp',
   KEYBASE: 'keybase',
+  GITHUB: 'github',
   GPG: 'gpg'
 } as const;
 
@@ -35,7 +37,7 @@ export interface KeyDetails {
   fingerprint: string;
   created?: string | Date | null;
   lastUsed?: string | Date | null;
-  source: 'self' | 'friend' | 'pgp' | 'keybase' | 'gpg';
+  source: 'self' | 'friend' | 'pgp' | 'keybase' | 'github' | 'gpg';
   path?: string | { public: string; private: string };
   email?: string;
   username?: string;
@@ -643,11 +645,11 @@ export async function importKey(options: ImportOptions): Promise<ImportResult> {
         if (!username) {
           throw new Error('Username is required for Keybase import');
         }
-        
+
         const customName = name || `keybase:${username}`;
-        
+
         const result = await keybaseUtils.addKeybaseKey(username, customName, verify);
-        
+
         return {
           success: true,
           type: KEY_TYPES.KEYBASE,
@@ -658,7 +660,26 @@ export async function importKey(options: ImportOptions): Promise<ImportResult> {
           path: result.path
         };
       }
-      
+
+      case 'github': {
+        if (!username) {
+          throw new Error('Username is required for GitHub import');
+        }
+
+        const customName = name || `github:${username}`;
+
+        const result = await githubUtils.addGitHubKey(username, customName, verify);
+
+        return {
+          success: true,
+          type: KEY_TYPES.GITHUB,
+          name: result.name,
+          username: username,
+          email: result.email,
+          fingerprint: result.fingerprint
+        };
+      }
+
       case 'gpg-import': {
         if (!keyContent) {
           throw new Error('Key content is required for GPG import');

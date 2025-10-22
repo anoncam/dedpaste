@@ -2,7 +2,7 @@
 
 // Key types
 export interface KeyInfo {
-  type: "self" | "friend" | "pgp" | "keybase" | "gpg";
+  type: "self" | "friend" | "pgp" | "keybase" | "github" | "gpg";
   name: string;
   path: string | { public: string; private: string };
   public?: string;
@@ -14,7 +14,7 @@ export interface KeyInfo {
   lastUsed?: string | Date | null;
   addedDate?: string;
   id?: string;
-  source?: "self" | "friend" | "pgp" | "keybase" | "gpg";
+  source?: "self" | "friend" | "pgp" | "keybase" | "github" | "gpg";
   expires?: string | Date;
   trust?: string;
   uids?: Array<{ uid?: string; trust?: string }>;
@@ -26,6 +26,7 @@ export interface KeyDatabase {
     friends: Record<string, KeyInfo>;
     pgp: Record<string, KeyInfo>;
     keybase: Record<string, KeyInfo>;
+    github: Record<string, KeyInfo>;
   };
   default_friend: string | null;
   last_used: string | null;
@@ -39,7 +40,7 @@ export interface EncryptionResult {
 }
 
 export interface RecipientInfo {
-  type: "self" | "friend" | "pgp" | "keybase";
+  type: "self" | "friend" | "pgp" | "keybase" | "github";
   name: string;
   fingerprint: string;
   username?: string;
@@ -115,6 +116,26 @@ export interface KeybaseProof {
   serviceUrl?: string;
   proofUrl?: string;
   humanUrl?: string;
+}
+
+// GitHub types
+export interface GitHubUser {
+  username: string;
+  name?: string;
+  bio?: string;
+  location?: string;
+  publicRepos?: number;
+  followers?: number;
+  following?: number;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface GitHubKeyInfo {
+  id: number;
+  key: string;
+  title?: string;
+  createdAt?: Date;
 }
 
 // Interactive mode types
@@ -300,7 +321,7 @@ export interface SearchOptions {
 }
 
 export interface KeySearchResult extends KeyInfo {
-  source: "self" | "friend" | "pgp" | "keybase" | "gpg";
+  source: "self" | "friend" | "pgp" | "keybase" | "github" | "gpg";
 }
 
 export interface ImportKeyOptions {
@@ -308,6 +329,7 @@ export interface ImportKeyOptions {
     | "file"
     | "pgp-server"
     | "keybase"
+    | "github"
     | "gpg-keyring"
     | "gpg-import"
     | "paste";
