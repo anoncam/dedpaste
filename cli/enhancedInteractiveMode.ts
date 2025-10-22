@@ -99,8 +99,8 @@ interface SearchOptions {
 interface KeySearchResult {
   id: string;
   name: string;
-  type: 'self' | 'friend' | 'pgp' | 'keybase' | 'gpg';
-  source: 'self' | 'friend' | 'pgp' | 'keybase' | 'gpg';
+  type: 'self' | 'friend' | 'pgp' | 'keybase' | 'github' | 'gpg';
+  source: 'self' | 'friend' | 'pgp' | 'keybase' | 'github' | 'gpg';
   fingerprint: string;
   email?: string;
   username?: string;
@@ -113,7 +113,7 @@ interface KeySearchResult {
 }
 
 interface ImportKeyOptions {
-  source: 'file' | 'pgp-server' | 'keybase' | 'gpg-keyring' | 'gpg-import' | 'paste';
+  source: 'file' | 'pgp-server' | 'keybase' | 'github' | 'gpg-keyring' | 'gpg-import' | 'paste';
   file?: string;
   content?: string;
   name?: string;
@@ -350,9 +350,10 @@ export async function searchAndListKeys(): Promise<void> {
       friend: [],
       pgp: [],
       keybase: [],
+      github: [],
       gpg: []
     };
-    
+
     for (const key of keys) {
       if (key.source === 'self') {
         groupedKeys.self.push(key);
@@ -362,6 +363,8 @@ export async function searchAndListKeys(): Promise<void> {
         groupedKeys.pgp.push(key);
       } else if (key.source === 'keybase') {
         groupedKeys.keybase.push(key);
+      } else if (key.source === 'github') {
+        groupedKeys.github.push(key);
       } else if (key.source === 'gpg') {
         groupedKeys.gpg.push(key);
       }
@@ -428,7 +431,24 @@ export async function searchAndListKeys(): Promise<void> {
         }
       }
     }
-    
+
+    // Print GitHub keys
+    if (groupedKeys.github.length > 0) {
+      console.log(chalk.bold.blue('\nGitHub Keys:'));
+      for (const key of groupedKeys.github) {
+        console.log(`- ${chalk.green('Name:')} ${key.name}`);
+        console.log(`  ${chalk.green('Type:')} ${key.type.toUpperCase()}`);
+        console.log(`  ${chalk.green('Username:')} ${key.username || 'unknown'}`);
+        console.log(`  ${chalk.green('Fingerprint:')} ${key.fingerprint}`);
+        if (key.email) {
+          console.log(`  ${chalk.green('Email:')} ${key.email}`);
+        }
+        if (key.lastUsed) {
+          console.log(`  ${chalk.green('Last Used:')} ${key.lastUsed.toLocaleString()}`);
+        }
+      }
+    }
+
     // Print GPG keys
     if (groupedKeys.gpg.length > 0) {
       console.log(chalk.bold.blue('\nGPG Keyring Keys:'));
@@ -480,6 +500,7 @@ export async function addOrImportKey(): Promise<void> {
         { name: 'Import from file', value: 'file' },
         { name: 'Fetch from PGP keyserver', value: 'pgp-server' },
         { name: 'Fetch from Keybase', value: 'keybase' },
+        { name: 'Fetch from GitHub', value: 'github' },
         { name: 'Import from GPG keyring', value: 'gpg-keyring' },
         { name: 'Import to GPG keyring', value: 'gpg-import' },
         { name: 'Paste key content', value: 'paste' }
@@ -568,7 +589,35 @@ export async function addOrImportKey(): Promise<void> {
         options.verify = keybaseAnswers.verify;
         break;
       }
-      
+
+      case 'github': {
+        const githubAnswers = await inquirer.prompt<InquirerAnswers>([
+          {
+            type: 'input',
+            name: 'username',
+            message: 'Enter GitHub username:',
+            validate: (input: string) => input ? true : 'Username cannot be empty'
+          },
+          {
+            type: 'input',
+            name: 'name',
+            message: 'Enter a name for this key (leave empty to use default):',
+            default: ''
+          },
+          {
+            type: 'confirm',
+            name: 'verify',
+            message: 'Verify GitHub user before importing?',
+            default: false
+          }
+        ]);
+
+        options.username = githubAnswers.username;
+        if (githubAnswers.name) options.name = githubAnswers.name;
+        options.verify = githubAnswers.verify;
+        break;
+      }
+
       case 'gpg-keyring': {
         // Check if GPG is available
         const gpgInfo = await modules.unifiedKeyManager?.initialize();
@@ -796,6 +845,8 @@ export async function viewKeyDetails(preloadedKeys: KeySearchResult[] | null = n
         label = `${key.name} (PGP Key${key.email ? ` - ${key.email}` : ''})`;
       } else if (key.source === 'keybase') {
         label = `${key.name} (Keybase - ${key.username || 'unknown'})`;
+      } else if (key.source === 'github') {
+        label = `${key.name} (GitHub - ${key.username || 'unknown'})`;
       } else if (key.source === 'gpg') {
         const uid = key.uids && key.uids.length > 0 ? key.uids[0].uid || 'Unknown' : 'Unknown';
         label = `${key.id} (GPG - ${uid})`;
@@ -936,6 +987,8 @@ export async function exportKeys(): Promise<void> {
         label = `${key.name} (PGP Key${key.email ? ` - ${key.email}` : ''})`;
       } else if (key.source === 'keybase') {
         label = `${key.name} (Keybase - ${key.username || 'unknown'})`;
+      } else if (key.source === 'github') {
+        label = `${key.name} (GitHub - ${key.username || 'unknown'})`;
       } else if (key.source === 'gpg') {
         const uid = key.uids && key.uids.length > 0 ? key.uids[0].uid || 'Unknown' : 'Unknown';
         label = `${key.id} (GPG - ${uid})`;
@@ -992,7 +1045,7 @@ export async function exportKeys(): Promise<void> {
     let filename: string;
     if (keyInfo.source === 'self') {
       filename = exportPrivate ? 'dedpaste_private_key.pem' : 'dedpaste_public_key.pem';
-    } else if (keyInfo.type === 'pgp' || keyInfo.type === 'keybase') {
+    } else if (keyInfo.type === 'pgp' || keyInfo.type === 'keybase' || keyInfo.type === 'github') {
       filename = `${keyInfo.name.replace(/[^a-z0-9_-]/gi, '_')}.asc`;
     } else if (keyInfo.type === 'gpg') {
       filename = `gpg_${keyInfo.id.substring(keyInfo.id.length - 8)}.asc`;
@@ -1282,6 +1335,7 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
     const friendKeys = allKeys.filter(key => key.source === 'friend');
     const pgpKeys = allKeys.filter(key => key.source === 'pgp');
     const keybaseKeys = allKeys.filter(key => key.source === 'keybase');
+    const githubKeys = allKeys.filter(key => key.source === 'github');
     
     // Create categorized choices
     const choices: Array<{ name: string; value: string | null; short?: string; disabled?: boolean }> = [];
@@ -1325,7 +1379,17 @@ export async function enhancedInteractiveSend(): Promise<OperationResult> {
         short: key.name
       })));
     }
-    
+
+    // GitHub category
+    if (githubKeys.length > 0) {
+      choices.push({ name: chalk.bold.blue('--- GitHub ---'), value: null, disabled: true });
+      choices.push(...githubKeys.map(key => ({
+        name: `${key.name} (${key.username || 'unknown'})`,
+        value: key.id,
+        short: key.name
+      })));
+    }
+
     // GPG option at the end
     choices.push({ name: chalk.bold.blue('--- Other Options ---'), value: null, disabled: true });
     choices.push({ name: 'Use GPG keyring directly (select a GPG key)', value: 'gpg', short: 'GPG' });

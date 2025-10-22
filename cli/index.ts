@@ -297,6 +297,9 @@ program
   .option('--keybase <username>', 'Fetch and add a Keybase user\'s PGP key')
   .option('--keybase-name <name>', 'Custom name for the Keybase user\'s key (optional)')
   .option('--no-verify', 'Skip verification of Keybase proofs')
+  // GitHub options
+  .option('--github <username>', 'Fetch and add a GitHub user\'s GPG public key')
+  .option('--github-name <name>', 'Custom name for the GitHub user\'s key (optional)')
   // Debugging and logging options
   .option('--verbose', 'Enable verbose logging (same as --log-level debug)')
   .option('--debug', 'Enable debug mode with extensive logging (same as --log-level trace)')
@@ -321,12 +324,17 @@ Keybase Integration:
   $ dedpaste keys --keybase username                      # Add a Keybase user's key
   $ dedpaste keys --keybase username --keybase-name bob   # Add with custom name
   $ dedpaste keys --keybase username --no-verify          # Skip verification of proofs
-  
+
+GitHub Integration:
+  $ dedpaste keys --github username                       # Add a GitHub user's GPG key
+  $ dedpaste keys --github username --github-name bob     # Add with custom name
+
 Key Storage:
   - Your keys are stored in ~/.dedpaste/keys/
   - Friend keys are stored in ~/.dedpaste/friends/
   - PGP keys are stored in ~/.dedpaste/pgp/
   - Keybase keys are stored in ~/.dedpaste/keybase/
+  - GitHub keys are stored in ~/.dedpaste/github/
   - Key database is at ~/.dedpaste/keydb.json
 `)
   .action(async (options: KeysOptions) => {
@@ -846,17 +854,17 @@ Key Storage:
       // Fetch and add a Keybase user's key
       if (options.keybase) {
         logger.debug('Fetching Keybase key', { username: options.keybase });
-        
+
         try {
           console.log(`Fetching Keybase key for user "${options.keybase}"...`);
-          
+
           if (options.verify) {
             console.log('Verifying user proofs on Keybase...');
           }
-          
+
           const name = options.keybaseName || `keybase:${options.keybase}`;
           const result = await fetchAndAddKeybaseKey(options.keybase, name, options.verify);
-          
+
           console.log(`
 ✓ Added Keybase key:
   - Name: ${result.name}
@@ -872,7 +880,38 @@ Key Storage:
         }
         return;
       }
-      
+
+      // Fetch and add a GitHub user's key
+      if (options.github) {
+        logger.debug('Fetching GitHub key', { username: options.github });
+
+        try {
+          const { addGitHubKey } = await import('./githubUtils.js');
+
+          console.log(`Fetching GPG key for GitHub user "${options.github}"...`);
+
+          if (options.verify) {
+            console.log('Verifying GitHub user...');
+          }
+
+          const customName = options.githubName;
+          const result = await addGitHubKey(options.github, customName, options.verify);
+
+          console.log(`
+✓ Added GitHub key:
+  - Name: ${result.name}
+  - GitHub username: ${options.github}
+  - Email: ${result.email || 'Not specified'}
+  - Fingerprint: ${result.fingerprint}
+`);
+        } catch (error: any) {
+          logger.error('Failed to fetch GitHub key', { error: error.message });
+          console.error(`Error fetching GitHub key: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
       // Generate a new key pair
       if (options.genKey) {
         logger.debug('Generating new key pair');
@@ -950,14 +989,20 @@ Examples:
   $ dedpaste send --interactive --encrypt                          # Interactive encrypted message
   $ dedpaste send --enhanced --encrypt                             # Enhanced interactive mode with full key support
   $ dedpaste send --list-friends                                   # List available recipients
-  
+
 PGP Options:
   $ dedpaste send --encrypt --for alice@example.com --pgp          # Encrypt for PGP key (REQUIRED: specify recipient)
   $ dedpaste send --encrypt --for alice --pgp --pgp-key-file friend.asc  # Use specific PGP key file
   $ dedpaste send --enhanced --encrypt --pgp                       # Use enhanced mode with GPG keyring support
-  
+
+Keybase Integration:
+  $ dedpaste send --encrypt --for keybase:username --pgp           # Encrypt for Keybase user
+
+GitHub Integration:
+  $ dedpaste send --encrypt --for github:username --pgp            # Encrypt for GitHub user (auto-fetches GPG key)
+
 IMPORTANT: PGP encryption always requires specifying a recipient with --for
-  
+
 Encryption:
   - Standard encryption uses RSA for key exchange and AES-256-GCM for content
   - PGP encryption (--pgp) uses OpenPGP standard compatible with GnuPG/GPG
