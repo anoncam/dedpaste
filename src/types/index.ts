@@ -13,6 +13,7 @@ export interface KeyInfo {
   created?: string | Date;
   lastUsed?: string | Date | null;
   addedDate?: string;
+  lastFetched?: string;
   id?: string;
   source?: "self" | "friend" | "pgp" | "keybase" | "github" | "gpg";
   expires?: string | Date;

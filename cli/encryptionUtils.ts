@@ -44,9 +44,10 @@ type EncryptedData = EncryptedDataV1 | EncryptedDataV2 | EncryptedDataV3;
 
 // Encrypt content for a specific recipient
 export async function encryptContent(
-  content: string, 
-  recipientName: string | null = null, 
-  usePgp: boolean = false
+  content: string,
+  recipientName: string | null = null,
+  usePgp: boolean = false,
+  refreshGithubKeys: boolean = false
 ): Promise<Buffer> {
   try {
     let publicKey: string;
@@ -60,16 +61,38 @@ export async function encryptContent(
       // If not found and it starts with "github:", try to fetch it just-in-time
       if (!friendKey && recipientName.startsWith('github:')) {
         const username = recipientName.replace('github:', '');
-        console.log(`GitHub key not found locally, fetching from GitHub...`);
 
         try {
           const { ensureGitHubKey } = await import('./githubUtils.js');
-          await ensureGitHubKey(username, false);
+          await ensureGitHubKey(username, false, refreshGithubKeys);
 
           // Try to get the key again after fetching
           friendKey = await getKey('any', recipientName);
         } catch (error: any) {
-          throw new Error(`Failed to fetch GitHub key for ${username}: ${error.message}`);
+          console.error(`\nError: Failed to fetch GitHub key for user "${username}"`);
+          console.error(`Details: ${error.message}`);
+          console.error(`\nPlease verify:`);
+          console.error(`  1. The GitHub username is correct`);
+          console.error(`  2. The user has a GPG key uploaded to GitHub`);
+          console.error(`  3. You have internet connectivity`);
+          console.error(`\nTo manually add a GitHub user's key, run:`);
+          console.error(`  dedpaste keys --github ${username}`);
+          throw new Error(`Failed to fetch GitHub key for ${username}`);
+        }
+      }
+
+      // Also check if we should refresh an existing GitHub key
+      if (friendKey && recipientName.startsWith('github:') && refreshGithubKeys) {
+        const username = recipientName.replace('github:', '');
+
+        try {
+          const { ensureGitHubKey } = await import('./githubUtils.js');
+          await ensureGitHubKey(username, false, true);
+
+          // Reload the key after refreshing
+          friendKey = await getKey('any', recipientName);
+        } catch (error: any) {
+          console.warn(`Warning: Failed to refresh GitHub key, using cached version`);
         }
       }
 

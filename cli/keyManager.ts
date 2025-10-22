@@ -355,6 +355,7 @@ interface GitHubKeyAddInfo {
   fingerprint: string;
   email?: string;
   created?: Date;
+  lastFetched?: string;
 }
 
 /**
@@ -388,7 +389,8 @@ export async function addGitHubKey(
     email: keyInfo.email,
     created: keyInfo.created,
     addedDate: new Date().toISOString(),
-    lastUsed: new Date().toISOString()
+    lastUsed: new Date().toISOString(),
+    lastFetched: keyInfo.lastFetched || new Date().toISOString()
   };
 
   await saveKeyDatabase(db);
