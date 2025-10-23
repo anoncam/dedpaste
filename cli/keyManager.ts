@@ -44,6 +44,7 @@ async function initKeyDatabase(): Promise<KeyDatabase> {
         keybase: {},
         github: {}
       },
+      groups: {},
       default_friend: null,
       last_used: null
     };
@@ -65,6 +66,9 @@ async function initKeyDatabase(): Promise<KeyDatabase> {
   }
   if (!db.keys.github) {
     db.keys.github = {};
+  }
+  if (!db.groups) {
+    db.groups = {};
   }
 
   return db;
@@ -175,25 +179,47 @@ export async function listKeys(): Promise<KeyDatabase> {
 }
 
 // Get a specific key
+/**
+ * Normalize short prefixes to full form
+ * gh:username -> github:username
+ * kb:username -> keybase:username
+ */
+function normalizeKeyName(name: string): string {
+  if (name.startsWith('gh:')) {
+    return name.replace('gh:', 'github:');
+  }
+  if (name.startsWith('kb:')) {
+    return name.replace('kb:', 'keybase:');
+  }
+  return name;
+}
+
 export async function getKey(type: string, name?: string): Promise<KeyInfo | null> {
   const db = await loadKeyDatabase();
-  
+
   if (type === 'self') {
     return db.keys.self;
   } else if (type === 'friend' && name) {
-    return db.keys.friends[name] || null;
+    const normalizedName = normalizeKeyName(name);
+    return db.keys.friends[normalizedName] || null;
   } else if (type === 'pgp' && name) {
-    return db.keys.pgp[name] || null;
+    const normalizedName = normalizeKeyName(name);
+    return db.keys.pgp[normalizedName] || null;
   } else if (type === 'keybase' && name) {
-    return db.keys.keybase[name] || null;
+    const normalizedName = normalizeKeyName(name);
+    return db.keys.keybase[normalizedName] || null;
   } else if (type === 'github' && name) {
-    return db.keys.github[name] || null;
+    const normalizedName = normalizeKeyName(name);
+    return db.keys.github[normalizedName] || null;
   } else if (type === 'any' && name) {
+    // Normalize the name first
+    const normalizedName = normalizeKeyName(name);
+
     // Try to find the key in any of the collections
-    return db.keys.friends[name] ||
-           db.keys.pgp[name] ||
-           db.keys.keybase[name] ||
-           db.keys.github[name] ||
+    return db.keys.friends[normalizedName] ||
+           db.keys.pgp[normalizedName] ||
+           db.keys.keybase[normalizedName] ||
+           db.keys.github[normalizedName] ||
            null;
   }
 

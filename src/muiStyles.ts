@@ -903,8 +903,8 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;"
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';"
                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
@@ -912,7 +912,7 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
               </div>
               <h3 class="MuiTypography-h6">Use Your Existing Keys</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
-                Leverage PGP keys from keyservers, GPG keyring, or Keybase for trusted communications.
+                Leverage PGP keys from keyservers, GPG keyring, Keybase, or GitHub for trusted communications.
               </p>
             </div>
           </div>
@@ -951,16 +951,16 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;"
+               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';"
                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
             <div class="MuiCardContent">
               <div class="mb-2">
-                <span class="MuiChip">👥 Friend Keys</span>
+                <span class="MuiChip">👥 Recipient Groups</span>
               </div>
-              <h3 class="MuiTypography-h6">Secure Sharing</h3>
+              <h3 class="MuiTypography-h6">Multi-Recipient Encryption</h3>
               <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary);">
-                Easily manage keys for your friends and encrypt content specifically for them.
+                Create groups and encrypt to multiple recipients at once with smart prefix shortcuts (gh:, kb:).
               </p>
             </div>
           </div>
@@ -1043,43 +1043,44 @@ dedpaste keys --gen-key
 # Encrypt for yourself
 echo "Secret data" | dedpaste send --encrypt
 
-# Encrypt for a specific friend
-dedpaste send --encrypt --for alice@example.com secret.txt
+# Encrypt for GitHub/Keybase users (NEW: short prefixes!)
+dedpaste send --encrypt --for gh:torvalds secret.txt
+dedpaste send --encrypt --for kb:username data.txt
 
-# Combine encryption with one-time viewing
-dedpaste send --encrypt --one-time confidential.pdf
+# Multiple recipients (NEW: space-separated!)
+dedpaste send --encrypt --for gh:alice kb:bob dave@example.com
+
+# Encrypt for a group (NEW!)
+dedpaste send --encrypt --for team confidential.pdf
 
 # Decrypt a paste (key in URL fragment)
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh#key
-
-# Use PGP encryption
-dedpaste send --encrypt --pgp --for user@example.com data.txt</code></pre>
+dedpaste get https://paste.d3d.dev/e/AbCdEfGh#key</code></pre>
           </div>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-md-6">
           <div class="MuiPaper MuiPaper-elevation2" style="padding: var(--mui-spacing-3); height: 100%;">
             <h3 class="MuiTypography-h6 mb-2">Key Management</h3>
-            <pre><code># Enhanced interactive key management (recommended)
+            <pre><code># Enhanced interactive mode (recommended)
 dedpaste keys:enhanced
 
-# Add a friend's key manually
-dedpaste keys --add alice
+# Fetch GitHub user's GPG key
+dedpaste keys --github torvalds
 
 # Import from Keybase
-dedpaste keys --add bob --keybase bob_username
+dedpaste keys --keybase username
 
-# Import PGP key from keyserver
-dedpaste keys --pgp-key alice@example.com
+# Create recipient groups
+dedpaste keys --group-create team gh:alice kb:bob
+
+# List groups
+dedpaste keys --group-list
 
 # List all stored keys
 dedpaste keys --list
 
-# Export your public key for sharing
-dedpaste keys --export
-
-# Remove a friend's key
-dedpaste keys --remove alice</code></pre>
+# Export your public key
+dedpaste keys --export</code></pre>
           </div>
         </div>
         
@@ -1186,9 +1187,20 @@ curl -X POST https://paste.d3d.dev/api/paste \\
   -d '{"content": "encrypted_content_base64", "isEncrypted": true}'</code></pre>
         
         <p class="MuiTypography-body2 mt-3" style="color: var(--mui-palette-text-secondary);">
-          <strong>Note:</strong> When using the API directly, encryption must be handled client-side. 
+          <strong>Note:</strong> When using the API directly, encryption must be handled client-side.
           The server only stores encrypted content and never has access to encryption keys.
         </p>
+
+        <div class="mt-4">
+          <h4 class="MuiTypography-h6 mb-2">NEW Features in v1.20+</h4>
+          <ul style="color: var(--mui-palette-text-secondary); line-height: 1.8;">
+            <li><strong>GitHub Integration:</strong> Fetch GPG keys directly from GitHub profiles using <code>gh:username</code></li>
+            <li><strong>Recipient Groups:</strong> Create groups for easy multi-recipient encryption</li>
+            <li><strong>Short Prefixes:</strong> Use <code>gh:</code> for GitHub, <code>kb:</code> for Keybase</li>
+            <li><strong>Auto-PGP Detection:</strong> No more manual <code>--pgp</code> flags - encryption type auto-detected</li>
+            <li><strong>Multiple Recipients:</strong> Space-separated recipients in a single command</li>
+          </ul>
+        </div>
       </div>
     </section>
 

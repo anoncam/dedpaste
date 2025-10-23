@@ -29,6 +29,7 @@ export interface KeyDatabase {
     keybase: Record<string, KeyInfo>;
     github: Record<string, KeyInfo>;
   };
+  groups?: Record<string, string[]>;
   default_friend: string | null;
   last_used: string | null;
 }
@@ -46,6 +47,16 @@ export interface RecipientInfo {
   fingerprint: string;
   username?: string;
   email?: string;
+}
+
+// Recipient resolution types
+export interface ResolvedRecipient {
+  type: "self" | "friend" | "pgp" | "keybase" | "github" | "group";
+  identifier: string;  // Normalized identifier (e.g., "github:username")
+  originalInput: string;  // What the user typed
+  keyInfo?: KeyInfo;  // Resolved key info (not present for groups)
+  members?: string[];  // For groups: list of member identifiers
+  autoFetched?: boolean;  // True if key was fetched remotely
 }
 
 export interface DecryptionResult {
