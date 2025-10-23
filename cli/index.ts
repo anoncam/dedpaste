@@ -1485,14 +1485,15 @@ GPG Keyring Integration:
         // It's a URL
         const url = new URL(urlOrId);
         const path = url.pathname;
-        
-        // Check if it's an encrypted paste
-        const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})$/);
+
+        // Check if it's an encrypted paste (with optional filename)
+        const encryptedMatch = path.match(/^\/e\/([a-zA-Z0-9]{8})(?:\/(.+))?$/);
         if (encryptedMatch) {
           id = encryptedMatch[1];
           isEncrypted = true;
         } else {
-          const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})$/);
+          // Check if it's a regular paste (with optional filename)
+          const regularMatch = path.match(/^\/([a-zA-Z0-9]{8})(?:\/(.+))?$/);
           if (regularMatch) {
             id = regularMatch[1];
           } else {
@@ -1514,9 +1515,16 @@ GPG Keyring Integration:
       }
       
       // Determine the URL to fetch
-      const fetchUrl = isEncrypted
-        ? `${API_URL}/e/${id}`
-        : `${API_URL}/${id}`;
+      // If the original URL had a full path with filename, use it
+      let fetchUrl: string;
+      if (urlOrId.startsWith('http')) {
+        const url = new URL(urlOrId);
+        fetchUrl = `${API_URL}${url.pathname}`;
+      } else {
+        fetchUrl = isEncrypted
+          ? `${API_URL}/e/${id}`
+          : `${API_URL}/${id}`;
+      }
       
       console.log(`Fetching paste from ${fetchUrl}...`);
       
@@ -1727,12 +1735,16 @@ GPG Keyring Integration:
           }
           
           console.log('\n✓ Paste decrypted successfully:\n');
-          process.stdout.write(result.content);
-          
+          const contentToWrite = result.decryptedContent || result.content;
+          process.stdout.write(contentToWrite);
+
           // Add a newline at the end if the content doesn't end with one
-          if (result.content.length > 0 && result.content[result.content.length - 1] !== 10) { // ASCII 10 is newline
-            process.stdout.write(Buffer.from('\n'));
+          if (contentToWrite.length > 0 && contentToWrite[contentToWrite.length - 1] !== '\n') {
+            process.stdout.write('\n');
           }
+
+          // Exit successfully
+          process.exit(0);
         } catch (error: any) {
           console.error(`\n❌ Decryption error: ${error.message}`);
           
@@ -1761,11 +1773,14 @@ GPG Keyring Integration:
       } else {
         // Just output the content
         process.stdout.write(contentBuffer);
-        
+
         // Add a newline at the end if the content doesn't end with one
         if (contentBuffer.length > 0 && contentBuffer[contentBuffer.length - 1] !== 10) { // ASCII 10 is newline
           process.stdout.write(Buffer.from('\n'));
         }
+
+        // Exit successfully
+        process.exit(0);
       }
     } catch (error: any) {
       console.error('Error:', error.message);
