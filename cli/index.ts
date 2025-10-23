@@ -128,6 +128,11 @@ interface KeysOptions {
   github?: string;
   githubName?: string;
   verify?: boolean;
+  groupCreate?: string[];
+  groupAdd?: string[];
+  groupRemove?: string[];
+  groupDelete?: string;
+  groupList?: boolean;
   verbose?: boolean;
   debug?: boolean;
   logLevel?: string;
@@ -140,7 +145,7 @@ interface SendOptions {
   file?: string;
   output?: boolean;
   encrypt?: boolean;
-  for?: string;
+  for?: string[];  // Changed to string[] to support multiple recipients
   listFriends?: boolean;
   keyFile?: string;
   genKey?: boolean;
@@ -304,6 +309,12 @@ program
   .option('--github <username>', 'Fetch and add a GitHub user\'s GPG public key')
   .option('--github-name <name>', 'Custom name for the GitHub user\'s key (optional)')
   .option('--refresh-github-keys', 'Force refresh of cached GitHub keys (re-fetch from GitHub)')
+  // Group management options
+  .option('--group-create <name> <members...>', 'Create a new recipient group with members')
+  .option('--group-add <name> <members...>', 'Add members to an existing group')
+  .option('--group-remove <name> <members...>', 'Remove members from a group')
+  .option('--group-delete <name>', 'Delete a group entirely')
+  .option('--group-list', 'List all groups and their members')
   // Debugging and logging options
   .option('--verbose', 'Enable verbose logging (same as --log-level debug)')
   .option('--debug', 'Enable debug mode with extensive logging (same as --log-level trace)')
@@ -332,6 +343,13 @@ Keybase Integration:
 GitHub Integration:
   $ dedpaste keys --github username                       # Add a GitHub user's GPG key
   $ dedpaste keys --github username --github-name bob     # Add with custom name
+
+Group Management (NEW):
+  $ dedpaste keys --group-create team gh:alice kb:bob     # Create a group named 'team'
+  $ dedpaste keys --group-add team gh:charlie             # Add member to group
+  $ dedpaste keys --group-remove team gh:bob              # Remove member from group
+  $ dedpaste keys --group-list                            # List all groups
+  $ dedpaste keys --group-delete team                     # Delete a group
 
 Key Storage:
   - Your keys are stored in ~/.dedpaste/keys/
@@ -917,6 +935,111 @@ Key Storage:
         return;
       }
 
+      // Group management commands
+      if (options.groupCreate) {
+        const [groupName, ...members] = options.groupCreate;
+        if (!groupName || members.length === 0) {
+          console.error('Error: Group name and at least one member required');
+          console.error('Usage: dedpaste keys --group-create <name> <member1> <member2> ...');
+          process.exit(1);
+        }
+
+        try {
+          const { createGroup } = await import('./groupManager.js');
+          await createGroup(groupName, members);
+          console.log(`\n✓ Created group "${groupName}" with ${members.length} member(s):`);
+          for (const member of members) {
+            console.log(`  - ${member}`);
+          }
+        } catch (error: any) {
+          console.error(`Error creating group: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      if (options.groupAdd) {
+        const [groupName, ...members] = options.groupAdd;
+        if (!groupName || members.length === 0) {
+          console.error('Error: Group name and at least one member required');
+          console.error('Usage: dedpaste keys --group-add <name> <member1> <member2> ...');
+          process.exit(1);
+        }
+
+        try {
+          const { addToGroup } = await import('./groupManager.js');
+          await addToGroup(groupName, members);
+          console.log(`\n✓ Added ${members.length} member(s) to group "${groupName}":`);
+          for (const member of members) {
+            console.log(`  - ${member}`);
+          }
+        } catch (error: any) {
+          console.error(`Error adding to group: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      if (options.groupRemove) {
+        const [groupName, ...members] = options.groupRemove;
+        if (!groupName || members.length === 0) {
+          console.error('Error: Group name and at least one member required');
+          console.error('Usage: dedpaste keys --group-remove <name> <member1> <member2> ...');
+          process.exit(1);
+        }
+
+        try {
+          const { removeFromGroup } = await import('./groupManager.js');
+          await removeFromGroup(groupName, members);
+          console.log(`\n✓ Removed ${members.length} member(s) from group "${groupName}":`);
+          for (const member of members) {
+            console.log(`  - ${member}`);
+          }
+        } catch (error: any) {
+          console.error(`Error removing from group: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      if (options.groupDelete) {
+        try {
+          const { deleteGroup } = await import('./groupManager.js');
+          await deleteGroup(options.groupDelete);
+          console.log(`\n✓ Deleted group "${options.groupDelete}"`);
+        } catch (error: any) {
+          console.error(`Error deleting group: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      if (options.groupList) {
+        try {
+          const { listGroups } = await import('./groupManager.js');
+          const groups = await listGroups();
+
+          if (Object.keys(groups).length === 0) {
+            console.log('\nNo groups found. Create one with:');
+            console.log('  dedpaste keys --group-create <name> <member1> <member2> ...');
+            return;
+          }
+
+          console.log('\n📋 Recipient Groups:\n');
+          for (const [name, members] of Object.entries(groups)) {
+            console.log(`  ${name} (${members.length} member${members.length !== 1 ? 's' : ''}):`);
+            for (const member of members) {
+              console.log(`    - ${member}`);
+            }
+            console.log('');
+          }
+        } catch (error: any) {
+          console.error(`Error listing groups: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
       // Generate a new key pair
       if (options.genKey) {
         logger.debug('Generating new key pair');
@@ -974,7 +1097,7 @@ program
   .option('-f, --file <path>', 'Upload a file from the specified path instead of stdin')
   .option('-o, --output', 'Print only the URL (without any additional text, useful for scripts)')
   .option('-e, --encrypt', 'Encrypt the content before uploading (requires key setup)')
-  .option('--for <friend>', 'Encrypt for a specific friend (requires adding their key first)')
+  .option('--for <recipients...>', 'Encrypt for recipient(s): supports gh:user, kb:user, email@domain, or group names')
   .option('--list-friends', 'List available friends you can encrypt messages for')
   .option('--key-file <path>', 'Path to public key for encryption (alternative to stored keys)')
   .option('--gen-key', 'Generate a new key pair for encryption if you don\'t have one')
@@ -996,18 +1119,24 @@ Examples:
   $ dedpaste send --enhanced --encrypt                             # Enhanced interactive mode with full key support
   $ dedpaste send --list-friends                                   # List available recipients
 
+Short Prefix Support (NEW):
+  $ dedpaste send --encrypt --for gh:torvalds                      # GitHub user (short prefix)
+  $ dedpaste send --encrypt --for kb:username                      # Keybase user (short prefix)
+  $ dedpaste send --encrypt --for github:torvalds                  # GitHub user (full prefix - still works)
+
+Multiple Recipients (NEW):
+  $ dedpaste send --encrypt --for gh:alice kb:bob charlie@example.com  # Multiple recipients (space-separated)
+
+Groups (NEW):
+  $ dedpaste keys --group-create team gh:alice kb:bob              # Create a group
+  $ dedpaste send --encrypt --for team                             # Encrypt for all group members
+
 PGP Options:
-  $ dedpaste send --encrypt --for alice@example.com --pgp          # Encrypt for PGP key (REQUIRED: specify recipient)
+  $ dedpaste send --encrypt --for alice@example.com                # Encrypt for PGP key (auto-detects PGP)
   $ dedpaste send --encrypt --for alice --pgp --pgp-key-file friend.asc  # Use specific PGP key file
   $ dedpaste send --enhanced --encrypt --pgp                       # Use enhanced mode with GPG keyring support
 
-Keybase Integration:
-  $ dedpaste send --encrypt --for keybase:username --pgp           # Encrypt for Keybase user
-
-GitHub Integration:
-  $ dedpaste send --encrypt --for github:username --pgp            # Encrypt for GitHub user (auto-fetches GPG key)
-
-IMPORTANT: PGP encryption always requires specifying a recipient with --for
+NOTE: PGP encryption is now auto-detected based on recipient type. The --pgp flag is optional.
 
 Encryption:
   - Standard encryption uses RSA for key exchange and AES-256-GCM for content
@@ -1044,8 +1173,8 @@ Encryption:
       
       let content: Buffer;
       let contentType: string;
-      let recipientName = options.for;
-      
+      let recipientName: string | string[] | null | undefined = options.for;
+
       // Interactive mode
       if (options.interactive) {
         // Check if we should use the enhanced interactive mode
@@ -1053,14 +1182,15 @@ Encryption:
           console.log('Using enhanced interactive mode for sending...');
           const { enhancedInteractiveSend } = await import('./enhancedInteractiveMode.js');
           const result = await enhancedInteractiveSend();
-          
+
           if (!result.success) {
             console.error(`Error: ${result.message}`);
             process.exit(1);
           }
-          
+
           content = Buffer.from(result.content || '');
-          recipientName = result.recipient ?? undefined;
+          // Interactive mode returns a single string, wrap in array if provided
+          recipientName = result.recipient ? [result.recipient] : undefined;
           options.temp = result.temp;
           options.pgp = result.pgp; // Use PGP flag from enhanced mode
           contentType = 'text/plain';
@@ -1068,7 +1198,8 @@ Encryption:
           // Use standard interactive mode
           const result = await interactiveSend();
           content = Buffer.from(result.content || '');
-          recipientName = result.recipient ?? undefined;
+          // Interactive mode returns a single string, wrap in array if provided
+          recipientName = result.recipient ? [result.recipient] : undefined;
           options.temp = result.temp;
           contentType = 'text/plain';
         }
@@ -1149,18 +1280,20 @@ Encryption:
           
           // If PGP key file is provided, read it and use it directly
           if (options.pgpKeyFile) {
-            if (!recipientName) {
+            if (!recipientName || (Array.isArray(recipientName) && recipientName.length === 0)) {
               console.error(`Error: When using --pgp-key-file, you must specify a recipient with --for`);
               process.exit(1);
             }
+            // For pgpKeyFile, use the first recipient
+            const firstRecipient = Array.isArray(recipientName) ? recipientName[0] : recipientName;
             const pgpKeyContent = await fsPromises.readFile(options.pgpKeyFile, 'utf8');
-            const pgpResult = await createPgpEncryptedMessage(content, pgpKeyContent, recipientName);
+            const pgpResult = await createPgpEncryptedMessage(content, pgpKeyContent, firstRecipient);
             content = typeof pgpResult === 'string' ? Buffer.from(pgpResult) : pgpResult;
           } else {
             // Use the standard encryption flow with PGP option
             const encryptResult = await encryptContent(
               content.toString('utf8'),
-              recipientName,
+              recipientName ?? null,
               usePgp,
               options.refreshGithubKeys
             );

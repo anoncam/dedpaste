@@ -11,6 +11,10 @@ A secure, privacy-focused pastebin CLI application powered by Cloudflare Workers
 - **RSA key pairs** - Support for PEM format keys
 - **Friend-to-friend encryption** - Manage keys for trusted contacts
 - **Keybase integration** - Import keys with proof verification
+- **GitHub integration** - Fetch GPG keys directly from GitHub profiles
+- **Recipient groups** - Create groups for easy multi-recipient encryption
+- **Smart prefix shortcuts** - Use `gh:` and `kb:` for quick GitHub/Keybase access
+- **Auto-PGP detection** - No more manual `--pgp` flags - encryption type auto-detected
 - **Zero-knowledge architecture** - Server never sees unencrypted content
 
 ### 🛠️ Developer Features
@@ -200,8 +204,49 @@ dedpaste keys --keybase username --keybase-name bob
 # Skip verification of proofs
 dedpaste keys --keybase username --no-verify
 
-# Send to a Keybase user
+# Send to a Keybase user (traditional syntax)
 echo "secret" | dedpaste send --encrypt --for keybase:username
+
+# Send to a Keybase user (NEW: short syntax - auto-detects PGP!)
+echo "secret" | dedpaste send --encrypt --for kb:username
+```
+
+### GitHub Integration
+
+```bash
+# Add a GitHub user's GPG key
+dedpaste keys --github torvalds
+
+# Add with custom name
+dedpaste keys --github torvalds --github-name linus
+
+# Send to a GitHub user (traditional syntax)
+echo "secret" | dedpaste send --encrypt --for github:torvalds
+
+# Send to a GitHub user (NEW: short syntax - auto-detects PGP!)
+echo "secret" | dedpaste send --encrypt --for gh:torvalds
+```
+
+### Recipient Groups (NEW!)
+
+```bash
+# Create a group of recipients
+dedpaste keys --group-create team gh:alice kb:bob charlie@example.com
+
+# Add members to an existing group
+dedpaste keys --group-add team gh:dave
+
+# Remove members from a group
+dedpaste keys --group-remove team kb:bob
+
+# List all groups
+dedpaste keys --group-list
+
+# Delete a group
+dedpaste keys --group-delete team
+
+# Encrypt for an entire group
+echo "Team announcement" | dedpaste send --encrypt --for team
 ```
 
 ### Sending Encrypted Pastes (`send` Command)
@@ -212,6 +257,16 @@ dedpaste send --list-friends
 
 # Send an encrypted message to a friend
 echo "Secret message for Alice" | dedpaste send --encrypt --for alice
+
+# NEW: Send to GitHub/Keybase users with short prefixes
+echo "Quick message" | dedpaste send --encrypt --for gh:torvalds
+echo "Quick message" | dedpaste send --encrypt --for kb:username
+
+# NEW: Send to multiple recipients (space-separated)
+echo "Team update" | dedpaste send --encrypt --for gh:alice kb:bob charlie@example.com
+
+# NEW: Send to a group
+echo "Group message" | dedpaste send --encrypt --for team
 
 # Send an encrypted one-time message to a friend
 echo "Secret one-time message" | dedpaste send --encrypt --for alice --temp
