@@ -129,8 +129,10 @@ jobs:
 
       - name: Check for existing GitHub release
         id: check-release
+        env:
+          VERSION_INPUT: ${{ steps.get-version.outputs.version }}
         run: |
-          VERSION="${{ steps.get-version.outputs.version }}"
+          VERSION="${VERSION_INPUT}"
           echo "Checking if GitHub release v$VERSION already exists..."
 
           # Set GH_TOKEN for gh CLI
@@ -425,15 +427,19 @@ jobs:
 
       - name: Set version for release
         id: version
+        env:
+          VERSION_INPUT: ${{ needs.check-version.outputs.version }}
         run: |
-          echo "version=${{ needs.check-version.outputs.version }}" >> $GITHUB_OUTPUT
-          echo "Using version: ${{ needs.check-version.outputs.version }}"
+          echo "version=${VERSION_INPUT}" >> $GITHUB_OUTPUT
+          echo "Using version: ${VERSION_INPUT}"
 
       - name: Debug release information
+        env:
+          VERSION_INPUT: ${{ needs.check-version.outputs.version }}
         run: |
           echo "========== RELEASE DEBUG INFO =========="
-          echo "Release version: v${{ needs.check-version.outputs.version }}"
-          echo "Creating tag: v${{ needs.check-version.outputs.version }}"
+          echo "Release version: v${VERSION_INPUT}"
+          echo "Creating tag: v${VERSION_INPUT}"
           echo "Checking if artifacts are available..."
           echo "========================================"
 

@@ -284,11 +284,12 @@ export async function searchKeys(query: string, options: SearchOptions = {}): Pr
           }
           
           // Extract name from UID (if present)
+          // Use global flag to remove all occurrences for complete sanitization
           let name = uidString;
           if (emailMatch) {
-            name = uidString.replace(/<[^>]+>/, '').trim();
+            name = uidString.replace(/<[^>]+>/g, '').trim();
           }
-          
+
           // Check if it matches the query
           if (
             fieldMatches(key.id) || 
@@ -428,11 +429,12 @@ export async function getKeyById(id: string, options: SearchOptions = {}): Promi
           }
           
           // Extract name from UID (if present)
+          // Use global flag to remove all occurrences for complete sanitization
           let name = uidString;
           if (emailMatch) {
-            name = uidString.replace(/<[^>]+>/, '').trim();
+            name = uidString.replace(/<[^>]+>/g, '').trim();
           }
-          
+
           return {
             id: gpgKey.id,
             name: name,

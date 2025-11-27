@@ -292,9 +292,9 @@ async function importPgpKey(pgpKeyString: string, identifier: string | null = nu
       
       // Extract name (everything before the email)
       let nameStr = userIdStr;
-      // Remove email in angle brackets
+      // Remove email in angle brackets (use global flag to remove all occurrences)
       if (nameStr.includes('<') && nameStr.includes('>')) {
-        nameStr = nameStr.replace(/<[^>]*>/, '');
+        nameStr = nameStr.replace(/<[^>]*>/g, '');
       }
       // Remove any remaining email address format
       nameStr = nameStr.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/, '');
@@ -349,9 +349,10 @@ async function importPgpKey(pgpKeyString: string, identifier: string | null = nu
             }
             
             // Extract name (everything before the comment and email)
+            // Use global flag to remove all occurrences for complete sanitization
             let nameStr = userIdStr;
-            if (commentMatch) nameStr = nameStr.replace(/\s*\([^)]+\)\s*/, ' ');
-            if (emailMatch) nameStr = nameStr.replace(/\s*<[^>]+>\s*/, '');
+            if (commentMatch) nameStr = nameStr.replace(/\s*\([^)]+\)\s*/g, ' ');
+            if (emailMatch) nameStr = nameStr.replace(/\s*<[^>]+>\s*/g, '');
             name = nameStr.trim() || name;
           }
         } catch (error: any) {
