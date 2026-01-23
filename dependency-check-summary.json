@@ -1,0 +1,89 @@
+{
+  "analysis_date": "2026-01-23T18:40:25.465Z",
+  "tool": "Sonatype MCP",
+  "repository": "anoncam/dedpaste",
+  "version": "1.22.0",
+  "summary": {
+    "total_dependencies": 32,
+    "production_dependencies": 19,
+    "dev_dependencies": 13,
+    "vulnerabilities_found": 1,
+    "end_of_life_packages": 2,
+    "malicious_packages": 0
+  },
+  "vulnerabilities": [
+    {
+      "package": "openpgp",
+      "version": "6.2.2",
+      "type": "production",
+      "vulnerability_id": "sonatype-2013-0185",
+      "cvss_score": 4.8,
+      "severity": "MEDIUM",
+      "affected_versions": ["6.2.2", "6.3.0"],
+      "recommendation": "Monitor for security patches from openpgp maintainers. Vulnerability exists in both current and latest versions."
+    }
+  ],
+  "end_of_life_packages": [
+    {
+      "package": "@types/highlight.js",
+      "version": "9.12.4",
+      "type": "dev",
+      "vulnerabilities": 0,
+      "recommendation": "Update to a maintained version"
+    },
+    {
+      "package": "@types/marked",
+      "version": "5.0.2",
+      "type": "dev",
+      "vulnerabilities": 0,
+      "recommendation": "Update to a maintained version"
+    }
+  ],
+  "clean_packages": {
+    "production": [
+      "@emotion/react@11.14.0",
+      "@emotion/server@11.11.0",
+      "@emotion/styled@11.14.1",
+      "@mui/material@7.3.1",
+      "clipboardy@4.0.0",
+      "commander@13.1.0",
+      "eslint@9.34.0",
+      "highlight.js@11.11.1",
+      "inquirer@12.9.4",
+      "keybase-api@0.0.1",
+      "marked@16.2.0",
+      "mime-types@2.1.35",
+      "mixpanel@0.18.1",
+      "node-fetch@3.3.2",
+      "prettier@3.6.2",
+      "uuid@13.0.0"
+    ],
+    "dev": [
+      "@cloudflare/workers-types@4.20250303.0",
+      "@types/inquirer@9.0.9",
+      "@types/mime-types@3.0.1",
+      "@types/node@22.13.10",
+      "chai@6.2.2",
+      "concurrently@9.1.2",
+      "jest@29.7.0",
+      "mocha@11.7.5",
+      "typescript@5.8.2",
+      "wrangler@4.60.0"
+    ]
+  },
+  "license_summary": {
+    "MIT": 27,
+    "Apache-2.0": 3,
+    "BSD-3-Clause": 3,
+    "GPL-3.0": 1,
+    "LGPL-3.0": 1,
+    "CC-BY-SA-4.0": 1
+  },
+  "recommendations": [
+    "Investigate openpgp vulnerability sonatype-2013-0185 and assess actual risk",
+    "Update @types/highlight.js to a maintained version",
+    "Update @types/marked to a maintained version",
+    "Review LGPL-3.0 license implications for openpgp package",
+    "Schedule quarterly dependency security reviews"
+  ]
+}
