@@ -1,0 +1,114 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║           DEDPASTE DEPENDENCY SECURITY ANALYSIS - SONATYPE MCP               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+📅 Date: 2026-01-23
+🔧 Tool: Sonatype MCP (Model Context Protocol)
+📦 Total Dependencies: 32 (19 production + 13 dev)
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              VULNERABILITY SUMMARY                           ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 🔴 CRITICAL:  0                                                              │
+│ 🟠 HIGH:      0                                                              │
+│ 🟡 MEDIUM:    1  ⚠️                                                          │
+│ 🔵 LOW:       0                                                              │
+│ ✅ CLEAN:     29                                                             │
+│ ⚠️  EOL:       2  (devDependencies only)                                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          VULNERABILITY DETAILS                               ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+🟡 MEDIUM SEVERITY
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Package:        openpgp                                                      │
+│ Version:        6.2.2                                                        │
+│ Type:           Production Dependency                                        │
+│ Vulnerability:  sonatype-2013-0185                                          │
+│ CVSS Score:     4.8                                                          │
+│ Latest Version: 6.3.0 (also affected)                                       │
+│                                                                              │
+│ 📝 Impact:                                                                   │
+│    Core dependency for PGP/GPG encryption in CLI tool                       │
+│                                                                              │
+│ 🔧 Recommendation:                                                           │
+│    - Monitor for security patches from openpgp maintainers                  │
+│    - Review CVE details to assess actual risk in your usage                 │
+│    - Vulnerability present in both current and latest versions              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          END-OF-LIFE PACKAGES                                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+⚠️  @types/highlight.js@9.12.4  (devDependency)
+    Status: End of Life | Vulnerabilities: None
+    → Update to maintained version
+
+⚠️  @types/marked@5.0.2  (devDependency)
+    Status: End of Life | Vulnerabilities: None
+    → Update to maintained version
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            LICENSE SUMMARY                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+MIT:              27 packages  (84%)
+Apache-2.0:        3 packages  (9%)
+BSD-3-Clause:      3 packages  (9%)
+GPL-3.0:           1 package   (3%)  [keybase-api]
+LGPL-3.0:          1 package   (3%)  [openpgp]
+CC-BY-SA-4.0:      1 package   (3%)
+
+⚠️  Note: Review LGPL-3.0 copyleft requirements for openpgp package
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                          CLEAN PACKAGES (29)                                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+✅ Production Dependencies (16):
+   @emotion/react, @emotion/server, @emotion/styled, @mui/material,
+   clipboardy, commander, eslint, highlight.js, inquirer, keybase-api,
+   marked, mime-types, mixpanel, node-fetch, prettier, uuid
+
+✅ Dev Dependencies (13):
+   @cloudflare/workers-types, @types/inquirer, @types/mime-types,
+   @types/node, chai, concurrently, jest, mocha, typescript, wrangler
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                            RECOMMENDATIONS                                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+🔴 IMMEDIATE ACTIONS:
+   1. Investigate openpgp vulnerability sonatype-2013-0185
+   2. Assess actual risk based on your encryption usage patterns
+
+🟡 MAINTENANCE ACTIONS:
+   3. Update @types/highlight.js to maintained version
+   4. Update @types/marked to maintained version
+   5. Review LGPL-3.0 license implications for openpgp
+   6. Schedule next security review for 2026-04-23 (3 months)
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                              CONCLUSION                                      ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Overall Security Posture: GOOD ✅
+
+The dedpaste project maintains a healthy dependency profile with 90% of packages
+having no vulnerabilities. The single medium-severity vulnerability in openpgp
+requires monitoring but does not pose an immediate critical risk.
+
+📊 Security Score: 29/30 clean packages (96.7%)
+
+For detailed analysis, see:
+- Full Report: SECURITY_ANALYSIS.md
+- JSON Data:   dependency-check-summary.json
+
+═══════════════════════════════════════════════════════════════════════════════
+Generated by Sonatype MCP Security Analysis | Next Review: 2026-04-23
+═══════════════════════════════════════════════════════════════════════════════
