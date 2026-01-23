@@ -279,7 +279,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Install dependencies
@@ -323,7 +323,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
 
       - name: Install dependencies
         run: npm ci
@@ -487,7 +487,7 @@ jobs:
       - name: Setup Node.js for publishing
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Create GitHub Release
@@ -521,12 +521,11 @@ jobs:
           npx tsc --version
           npx tsc --listFiles
 
-          echo "Publishing to NPM with provenance and SBOM metadata"
-          npm publish --provenance
+          echo "Publishing to NPM with provenance (using OIDC Trusted Publisher)"
+          npm publish --provenance --access public
 
           echo "NPM publish complete"
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # No NODE_AUTH_TOKEN needed - using npm Trusted Publishers (OIDC)
 
       - name: Release complete
         run: |
