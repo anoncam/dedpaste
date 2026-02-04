@@ -454,3 +454,210 @@ async function decryptV2Content(encryptedData: EncryptedDataV2): Promise<Decrypt
     senderInfo: metadata.recipient
   };
 }
+
+// ============================================
+// Version 4: Streaming Encryption for Large Files
+// ============================================
+
+import type { EncryptedFileHeader, EncryptedChunkHeader } from '../src/types/index.js';
+
+/**
+ * Version 4 encrypted file structure.
+ * Designed for streaming encryption of large files.
+ */
+interface EncryptedDataV4 {
+  version: 4;
+  header: EncryptedFileHeader;
+  // Chunks are stored separately, not in this structure
+}
+
+/**
+ * Chunk header size: 16 (IV) + 16 (authTag) + 4 (length) = 36 bytes
+ */
+const CHUNK_HEADER_SIZE = 36;
+
+/**
+ * Create an encrypted file header for streaming encryption.
+ * This should be stored as the first part of a multipart upload.
+ */
+export async function createEncryptedHeader(
+  recipientName: string,
+  totalChunks: number,
+  originalSize: number,
+  chunkSize: number,
+  filename?: string,
+): Promise<{ header: EncryptedFileHeader; symmetricKey: Buffer }> {
+  // Get recipient's public key
+  const keyInfo = await getKey(recipientName);
+  if (!keyInfo || !keyInfo.public) {
+    throw new Error(`No public key found for recipient: ${recipientName}`);
+  }
+
+  const publicKey = await fsPromises.readFile(keyInfo.public, 'utf8');
+
+  // Generate a random symmetric key
+  const symmetricKey = crypto.randomBytes(32);
+
+  // Encrypt the symmetric key with the recipient's public key
+  const encryptedKey = crypto.publicEncrypt(
+    {
+      key: publicKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    symmetricKey,
+  );
+
+  const recipientInfo: RecipientInfo = {
+    type: keyInfo.type as any,
+    name: recipientName,
+    fingerprint: keyInfo.fingerprint,
+    username: keyInfo.username,
+    email: keyInfo.email,
+  };
+
+  const header: EncryptedFileHeader = {
+    version: 4,
+    metadata: {
+      sender: 'self',
+      recipient: recipientInfo,
+      timestamp: new Date().toISOString(),
+      totalChunks,
+      originalSize,
+      chunkSize,
+      filename,
+    },
+    encryptedKey: encryptedKey.toString('base64'),
+  };
+
+  await updateLastUsed(recipientName);
+
+  return { header, symmetricKey };
+}
+
+/**
+ * Encrypt a single chunk using the symmetric key.
+ * Returns the chunk with prepended header (IV + authTag + length + encrypted data).
+ */
+export function encryptChunk(
+  chunk: Buffer,
+  symmetricKey: Buffer,
+): Buffer {
+  // Generate unique IV for this chunk
+  const iv = crypto.randomBytes(16);
+
+  // Encrypt the chunk
+  const cipher = crypto.createCipheriv('aes-256-gcm', symmetricKey, iv);
+  let encrypted = cipher.update(chunk);
+  encrypted = Buffer.concat([encrypted, cipher.final()]);
+  const authTag = cipher.getAuthTag();
+
+  // Create header: IV (16) + authTag (16) + length (4)
+  const header = Buffer.alloc(CHUNK_HEADER_SIZE);
+  iv.copy(header, 0);
+  authTag.copy(header, 16);
+  header.writeUInt32BE(encrypted.length, 32);
+
+  // Combine header and encrypted data
+  return Buffer.concat([header, encrypted]);
+}
+
+/**
+ * Decrypt a single chunk using the symmetric key.
+ * Expects chunk format: [16-byte IV][16-byte authTag][4-byte length][encrypted data]
+ */
+export function decryptChunk(
+  encryptedChunk: Buffer,
+  symmetricKey: Buffer,
+): Buffer {
+  if (encryptedChunk.length < CHUNK_HEADER_SIZE) {
+    throw new Error('Invalid encrypted chunk: too short for header');
+  }
+
+  // Extract header components
+  const iv = encryptedChunk.subarray(0, 16);
+  const authTag = encryptedChunk.subarray(16, 32);
+  const encryptedLength = encryptedChunk.readUInt32BE(32);
+  const encryptedData = encryptedChunk.subarray(CHUNK_HEADER_SIZE, CHUNK_HEADER_SIZE + encryptedLength);
+
+  if (encryptedData.length !== encryptedLength) {
+    throw new Error(`Invalid encrypted chunk: expected ${encryptedLength} bytes, got ${encryptedData.length}`);
+  }
+
+  // Decrypt
+  const decipher = crypto.createDecipheriv('aes-256-gcm', symmetricKey, iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encryptedData);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+
+  return decrypted;
+}
+
+/**
+ * Parse an encrypted file header from JSON.
+ */
+export function parseEncryptedHeader(headerJson: string): EncryptedFileHeader {
+  const parsed = JSON.parse(headerJson);
+  if (parsed.version !== 4) {
+    throw new Error(`Unsupported encryption version: ${parsed.version}`);
+  }
+  return parsed as EncryptedFileHeader;
+}
+
+/**
+ * Decrypt the symmetric key from an encrypted file header.
+ */
+export async function decryptSymmetricKey(
+  header: EncryptedFileHeader,
+  privateKeyPath?: string,
+): Promise<Buffer> {
+  // Get private key
+  let privateKey: string;
+
+  if (privateKeyPath) {
+    privateKey = await fsPromises.readFile(privateKeyPath, 'utf8');
+  } else {
+    // Try to get self key
+    const selfKey = await getKey('self');
+    if (!selfKey) {
+      throw new Error('No private key available for decryption');
+    }
+    const keyPath = typeof selfKey.path === 'string' ? selfKey.path : selfKey.path.private;
+    privateKey = await fsPromises.readFile(keyPath, 'utf8');
+  }
+
+  // Decrypt the symmetric key
+  const encryptedKey = Buffer.from(header.encryptedKey, 'base64');
+  const symmetricKey = crypto.privateDecrypt(
+    {
+      key: privateKey,
+      padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    encryptedKey,
+  );
+
+  return symmetricKey;
+}
+
+/**
+ * Check if encrypted data is version 4 (streaming format).
+ */
+export function isStreamingEncryption(data: Buffer | string): boolean {
+  try {
+    const str = typeof data === 'string' ? data : data.toString('utf8');
+    const parsed = JSON.parse(str);
+    return parsed.version === 4;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Calculate the encrypted size of a chunk (for planning purposes).
+ * Encryption adds: 16 (IV) + 16 (authTag) + 4 (length) + padding overhead
+ * AES-GCM doesn't add padding, so encrypted size = original size + header
+ */
+export function calculateEncryptedChunkSize(plainChunkSize: number): number {
+  return CHUNK_HEADER_SIZE + plainChunkSize;
+}

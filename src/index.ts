@@ -45,10 +45,24 @@ hljs.registerLanguage("rust", rust);
 hljs.registerLanguage("ruby", ruby);
 hljs.registerLanguage("php", php);
 
+// Import multipart upload types
+import type {
+  UploadSession,
+  UploadedPart,
+  MultipartInitRequest,
+  MultipartInitResponse,
+  PartUploadResponse,
+  MultipartCompleteRequest,
+  MultipartCompleteResponse,
+  UploadStatusResponse,
+} from "./types";
+import { LARGE_FILE_CONSTANTS } from "./types";
+
 // Define the environment interface for Cloudflare Workers
 type Env = {
   PASTE_BUCKET: R2Bucket;
   PASTE_METADATA?: KVNamespace; // Optional KV namespace for metadata storage
+  UPLOAD_SESSIONS?: KVNamespace; // KV namespace for multipart upload sessions
 };
 
 type PasteMetadata = {
@@ -167,11 +181,56 @@ export default {
         return await handleUpload(request, env, isOneTime, true, analytics);
       }
 
+      // ============================================
+      // Multipart Upload Endpoints (Large Files)
+      // ============================================
+
+      // Initialize multipart upload
+      if (path === "/upload/init" || path === "/e/upload/init") {
+        const isEncrypted = path.startsWith("/e/");
+        return await handleMultipartInit(request, env, isEncrypted);
+      }
+
+      // Complete multipart upload
+      const completeMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/complete$/);
+      if (completeMatch) {
+        const isEncrypted = !!completeMatch[1];
+        const sessionId = completeMatch[2];
+        return await handleMultipartComplete(request, env, sessionId, isEncrypted);
+      }
+
+      // Abort multipart upload
+      const abortMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/abort$/);
+      if (abortMatch) {
+        const sessionId = abortMatch[2];
+        return await handleMultipartAbort(request, env, sessionId);
+      }
+
+      return new Response("Not found", { status: 404 });
+    }
+
+    // Handle PUT requests for multipart upload parts
+    if (request.method === "PUT") {
+      const partMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/part\/(\d+)$/);
+      if (partMatch) {
+        const isEncrypted = !!partMatch[1];
+        const sessionId = partMatch[2];
+        const partNumber = parseInt(partMatch[3], 10);
+        return await handleMultipartPartUpload(request, env, sessionId, partNumber);
+      }
+
       return new Response("Not found", { status: 404 });
     }
 
     // Get a paste
     if (request.method === "GET") {
+      // Handle multipart upload status (for resume)
+      const statusMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/status$/);
+      if (statusMatch) {
+        const sessionId = statusMatch[2];
+        return await handleMultipartStatus(env, sessionId);
+      }
+
       // Handle API decryption for web interface
       const decryptMatch = path.match(/^\/api\/decrypt\/([a-zA-Z0-9]{8})$/);
       if (decryptMatch) {
@@ -2153,4 +2212,631 @@ async function handleWebDecrypt(
   // For now, just redirect to the regular GET handler
   // In the future, this would handle decryption with provided keys
   return await handleGet(id, env, ctx, false, request);
+}
+
+// ============================================
+// Multipart Upload Handlers (Large File Support)
+// ============================================
+
+/**
+ * Generate a unique session ID for multipart uploads.
+ */
+function generateSessionId(): string {
+  const timestamp = Date.now().toString(36);
+  const random = generateId(12);
+  return `sess_${timestamp}_${random}`;
+}
+
+/**
+ * Get upload session from KV storage.
+ */
+async function getUploadSession(
+  env: Env,
+  sessionId: string,
+): Promise<UploadSession | null> {
+  if (!env.UPLOAD_SESSIONS) {
+    return null;
+  }
+  const data = await env.UPLOAD_SESSIONS.get(sessionId);
+  if (!data) {
+    return null;
+  }
+  return JSON.parse(data) as UploadSession;
+}
+
+/**
+ * Save upload session to KV storage.
+ */
+async function saveUploadSession(
+  env: Env,
+  sessionId: string,
+  session: UploadSession,
+): Promise<void> {
+  if (!env.UPLOAD_SESSIONS) {
+    throw new Error("UPLOAD_SESSIONS KV namespace not configured");
+  }
+  // Set TTL to session expiration time
+  const ttlSeconds = Math.max(
+    60,
+    Math.floor((session.expiresAt - Date.now()) / 1000),
+  );
+  await env.UPLOAD_SESSIONS.put(sessionId, JSON.stringify(session), {
+    expirationTtl: ttlSeconds,
+  });
+}
+
+/**
+ * Delete upload session from KV storage.
+ */
+async function deleteUploadSession(
+  env: Env,
+  sessionId: string,
+): Promise<void> {
+  if (env.UPLOAD_SESSIONS) {
+    await env.UPLOAD_SESSIONS.delete(sessionId);
+  }
+}
+
+/**
+ * Initialize a new multipart upload session.
+ * POST /upload/init or POST /e/upload/init
+ */
+async function handleMultipartInit(
+  request: Request,
+  env: Env,
+  isEncrypted: boolean,
+): Promise<Response> {
+  // Check if UPLOAD_SESSIONS is configured
+  if (!env.UPLOAD_SESSIONS) {
+    return new Response(
+      JSON.stringify({
+        error: "Large file uploads not configured. UPLOAD_SESSIONS KV namespace required.",
+      }),
+      {
+        status: 503,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
+
+  try {
+    const body = (await request.json()) as MultipartInitRequest;
+    const {
+      filename,
+      contentType,
+      totalSize,
+      totalParts,
+      isOneTime = false,
+      encryptionMetadata,
+    } = body;
+
+    // Validate request
+    if (!filename || !contentType || !totalSize || !totalParts) {
+      return new Response(
+        JSON.stringify({ error: "Missing required fields: filename, contentType, totalSize, totalParts" }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Validate file size
+    if (totalSize > LARGE_FILE_CONSTANTS.MAX_FILE_SIZE) {
+      return new Response(
+        JSON.stringify({
+          error: `File too large. Maximum size is ${LARGE_FILE_CONSTANTS.MAX_FILE_SIZE / (1024 * 1024 * 1024)}GB`,
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Generate paste ID and storage key
+    const pasteId = generateId();
+    const key = isOneTime ? `${ONE_TIME_PREFIX}${pasteId}` : pasteId;
+
+    // Create multipart upload in R2
+    const multipartUpload = await env.PASTE_BUCKET.createMultipartUpload(key, {
+      customMetadata: {
+        contentType: isEncrypted ? "application/json" : contentType,
+        isOneTime: String(isOneTime),
+        createdAt: String(Date.now()),
+        filename: filename,
+        isMultipart: "true",
+      },
+    });
+
+    // Generate session ID
+    const sessionId = generateSessionId();
+
+    // Create session state
+    const session: UploadSession = {
+      uploadId: multipartUpload.uploadId,
+      key,
+      filename,
+      contentType: isEncrypted ? "application/json" : contentType,
+      totalSize,
+      totalParts,
+      uploadedParts: [],
+      isOneTime,
+      isEncrypted,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + LARGE_FILE_CONSTANTS.SESSION_TTL_MS,
+      encryptionMetadata,
+    };
+
+    // Save session to KV
+    await saveUploadSession(env, sessionId, session);
+
+    console.log(
+      `[MULTIPART] Initialized upload session ${sessionId} for paste ${pasteId}, ` +
+        `size=${totalSize}, parts=${totalParts}, encrypted=${isEncrypted}, oneTime=${isOneTime}`,
+    );
+
+    const response: MultipartInitResponse = {
+      sessionId,
+      uploadId: multipartUpload.uploadId,
+      pasteId,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    console.error("[MULTIPART] Init error:", error);
+    return new Response(
+      JSON.stringify({ error: "Failed to initialize multipart upload" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
+}
+
+/**
+ * Upload a single part of a multipart upload.
+ * PUT /upload/:sessionId/part/:partNumber or PUT /e/upload/:sessionId/part/:partNumber
+ */
+async function handleMultipartPartUpload(
+  request: Request,
+  env: Env,
+  sessionId: string,
+  partNumber: number,
+): Promise<Response> {
+  try {
+    // Get session
+    const session = await getUploadSession(env, sessionId);
+    if (!session) {
+      return new Response(
+        JSON.stringify({ error: "Upload session not found or expired" }),
+        {
+          status: 404,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Check if session has expired
+    if (Date.now() > session.expiresAt) {
+      await deleteUploadSession(env, sessionId);
+      return new Response(
+        JSON.stringify({ error: "Upload session has expired" }),
+        {
+          status: 410,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Validate part number
+    if (partNumber < 1 || partNumber > session.totalParts) {
+      return new Response(
+        JSON.stringify({
+          error: `Invalid part number. Expected 1-${session.totalParts}, got ${partNumber}`,
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Check if part already uploaded
+    const existingPart = session.uploadedParts.find(
+      (p) => p.partNumber === partNumber,
+    );
+    if (existingPart) {
+      // Return existing etag (idempotent)
+      const response: PartUploadResponse = {
+        etag: existingPart.etag,
+        partNumber,
+      };
+      return new Response(JSON.stringify(response), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    // Resume multipart upload in R2
+    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
+      session.key,
+      session.uploadId,
+    );
+
+    // Get content length
+    const contentLength = parseInt(
+      request.headers.get("Content-Length") || "0",
+      10,
+    );
+
+    // Validate minimum part size (except for last part)
+    if (
+      partNumber < session.totalParts &&
+      contentLength < LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE
+    ) {
+      return new Response(
+        JSON.stringify({
+          error: `Part size too small. Minimum is ${LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE / (1024 * 1024)}MB (except for last part)`,
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Upload the part - stream the request body directly to R2
+    const uploadedPart = await multipartUpload.uploadPart(
+      partNumber,
+      request.body as ReadableStream,
+    );
+
+    // Update session with uploaded part
+    session.uploadedParts.push({
+      partNumber,
+      etag: uploadedPart.etag,
+      size: contentLength,
+    });
+
+    // Sort parts by part number for consistency
+    session.uploadedParts.sort((a, b) => a.partNumber - b.partNumber);
+
+    // Save updated session
+    await saveUploadSession(env, sessionId, session);
+
+    console.log(
+      `[MULTIPART] Uploaded part ${partNumber}/${session.totalParts} for session ${sessionId}, ` +
+        `size=${contentLength}, etag=${uploadedPart.etag}`,
+    );
+
+    const response: PartUploadResponse = {
+      etag: uploadedPart.etag,
+      partNumber,
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    console.error(`[MULTIPART] Part upload error for session ${sessionId}:`, error);
+    return new Response(
+      JSON.stringify({ error: "Failed to upload part" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
+}
+
+/**
+ * Complete a multipart upload.
+ * POST /upload/:sessionId/complete or POST /e/upload/:sessionId/complete
+ */
+async function handleMultipartComplete(
+  request: Request,
+  env: Env,
+  sessionId: string,
+  isEncrypted: boolean,
+): Promise<Response> {
+  try {
+    // Get session
+    const session = await getUploadSession(env, sessionId);
+    if (!session) {
+      return new Response(
+        JSON.stringify({ error: "Upload session not found or expired" }),
+        {
+          status: 404,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Parse request body
+    const body = (await request.json()) as MultipartCompleteRequest;
+    const { parts } = body;
+
+    // Validate all parts are uploaded
+    if (!parts || parts.length !== session.totalParts) {
+      return new Response(
+        JSON.stringify({
+          error: `Expected ${session.totalParts} parts, got ${parts?.length || 0}`,
+        }),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Resume multipart upload in R2
+    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
+      session.key,
+      session.uploadId,
+    );
+
+    // Complete the upload
+    // Parts must be sorted by part number
+    const sortedParts = parts
+      .map((p) => ({
+        partNumber: p.partNumber,
+        etag: p.etag,
+      }))
+      .sort((a, b) => a.partNumber - b.partNumber);
+
+    await multipartUpload.complete(sortedParts);
+
+    // Calculate total uploaded size
+    const totalSize = session.uploadedParts.reduce((sum, p) => sum + p.size, 0);
+
+    // Delete session from KV
+    await deleteUploadSession(env, sessionId);
+
+    // Extract paste ID from key (remove onetime- prefix if present)
+    const pasteId = session.key.startsWith(ONE_TIME_PREFIX)
+      ? session.key.slice(ONE_TIME_PREFIX.length)
+      : session.key;
+
+    // Generate URL
+    const baseUrl = new URL(request.url).origin;
+    const encodedFilename = encodeURIComponent(session.filename);
+    const url = isEncrypted
+      ? `${baseUrl}/e/${pasteId}/${encodedFilename}`
+      : `${baseUrl}/${pasteId}/${encodedFilename}`;
+
+    console.log(
+      `[MULTIPART] Completed upload for session ${sessionId}, paste=${pasteId}, ` +
+        `totalSize=${totalSize}, encrypted=${isEncrypted}`,
+    );
+
+    const response: MultipartCompleteResponse = {
+      url,
+      id: pasteId,
+      size: totalSize,
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    console.error(`[MULTIPART] Complete error for session ${sessionId}:`, error);
+    return new Response(
+      JSON.stringify({ error: "Failed to complete multipart upload" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
+}
+
+/**
+ * Abort a multipart upload and clean up.
+ * POST /upload/:sessionId/abort or POST /e/upload/:sessionId/abort
+ */
+async function handleMultipartAbort(
+  request: Request,
+  env: Env,
+  sessionId: string,
+): Promise<Response> {
+  try {
+    // Get session
+    const session = await getUploadSession(env, sessionId);
+    if (!session) {
+      // Session not found - may already be aborted or expired
+      return new Response(
+        JSON.stringify({ success: true, message: "Session not found or already cleaned up" }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    try {
+      // Resume and abort the R2 multipart upload
+      const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
+        session.key,
+        session.uploadId,
+      );
+      await multipartUpload.abort();
+    } catch (e) {
+      // Ignore abort errors - upload may already be completed or aborted
+      console.log(`[MULTIPART] Abort R2 upload warning for session ${sessionId}:`, e);
+    }
+
+    // Delete session from KV
+    await deleteUploadSession(env, sessionId);
+
+    console.log(`[MULTIPART] Aborted upload session ${sessionId}`);
+
+    return new Response(
+      JSON.stringify({ success: true, message: "Upload session aborted and cleaned up" }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  } catch (error) {
+    console.error(`[MULTIPART] Abort error for session ${sessionId}:`, error);
+    return new Response(
+      JSON.stringify({ error: "Failed to abort multipart upload" }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
+}
+
+/**
+ * Get upload session status (for resume support).
+ * GET /upload/:sessionId/status or GET /e/upload/:sessionId/status
+ */
+async function handleMultipartStatus(
+  env: Env,
+  sessionId: string,
+): Promise<Response> {
+  try {
+    // Get session
+    const session = await getUploadSession(env, sessionId);
+    if (!session) {
+      return new Response(
+        JSON.stringify({
+          error: "Upload session not found or expired",
+          isValid: false,
+        }),
+        {
+          status: 404,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Check if session has expired
+    const isExpired = Date.now() > session.expiresAt;
+    if (isExpired) {
+      await deleteUploadSession(env, sessionId);
+      return new Response(
+        JSON.stringify({
+          error: "Upload session has expired",
+          isValid: false,
+        }),
+        {
+          status: 410,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+        },
+      );
+    }
+
+    // Extract paste ID from key
+    const pasteId = session.key.startsWith(ONE_TIME_PREFIX)
+      ? session.key.slice(ONE_TIME_PREFIX.length)
+      : session.key;
+
+    // Calculate uploaded bytes
+    const uploadedBytes = session.uploadedParts.reduce((sum, p) => sum + p.size, 0);
+
+    const response: UploadStatusResponse = {
+      sessionId,
+      pasteId,
+      totalParts: session.totalParts,
+      uploadedParts: session.uploadedParts,
+      uploadedBytes,
+      totalSize: session.totalSize,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      isValid: true,
+    };
+
+    return new Response(JSON.stringify(response), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
+  } catch (error) {
+    console.error(`[MULTIPART] Status error for session ${sessionId}:`, error);
+    return new Response(
+      JSON.stringify({ error: "Failed to get upload status", isValid: false }),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      },
+    );
+  }
 }
