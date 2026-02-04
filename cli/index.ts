@@ -45,6 +45,20 @@ try {
 // Import analytics
 import { analytics } from './analytics.js';
 
+// Import large file upload modules
+import {
+  shouldUseMultipart,
+  uploadLargeFile,
+  resumeUpload,
+  abortUpload,
+} from './largeFileUpload.js';
+import { LARGE_FILE_CONSTANTS } from '../src/types/index.js';
+import {
+  listResumeStates,
+  formatResumeState,
+  cleanupResumeStates,
+} from './resumeState.js';
+
 // Import our core modules
 import {
   generateKeyPair,
@@ -157,6 +171,12 @@ interface SendOptions {
   pgpKeyFile?: string;
   pgpArmor?: boolean;
   refreshGithubKeys?: boolean;
+  // Large file upload options
+  chunkSize?: string;
+  resume?: string;
+  progress?: boolean;  // --no-progress sets this to false
+  listUploads?: boolean;
+  abortUpload?: string;
 }
 
 interface GetOptions {
@@ -1105,6 +1125,12 @@ program
   .option('--enhanced', 'Use enhanced interactive mode with advanced key selection features')
   .option('--debug', 'Debug mode: show encrypted content without uploading')
   .option('-c, --copy', 'Copy the URL to clipboard automatically')
+  // Large file options
+  .option('--chunk-size <mb>', 'Chunk size in MB for large file uploads (default: 10, min: 5)')
+  .option('--resume <file>', 'Resume an interrupted upload from a saved state file')
+  .option('--no-progress', 'Disable progress bar for large file uploads')
+  .option('--list-uploads', 'List interrupted uploads that can be resumed')
+  .option('--abort-upload <sessionId>', 'Abort an interrupted upload by session ID')
   // PGP options
   .option('--pgp', 'Use PGP encryption instead of hybrid RSA/AES')
   .option('--pgp-key-file <path>', 'Use a specific PGP public key file for encryption')
@@ -1156,17 +1182,85 @@ Encryption:
       if (options.listFriends) {
         const db = await listKeys();
         const friendNames = Object.keys(db.keys.friends);
-        
+
         if (friendNames.length === 0) {
           console.log('No friend keys found. Add one with "dedpaste keys add-friend"');
           return;
         }
-        
+
         console.log('\nAvailable friends:');
         for (const name of friendNames) {
           const friend = db.keys.friends[name];
           const lastUsed = friend.lastUsed ? new Date(friend.lastUsed).toLocaleString() : 'Never';
           console.log(`  - ${name} (last used: ${lastUsed})`);
+        }
+        return;
+      }
+
+      // ============================================
+      // Large File Upload Handlers
+      // ============================================
+
+      // List interrupted uploads
+      if (options.listUploads) {
+        const states = await listResumeStates();
+        if (states.length === 0) {
+          console.log('No interrupted uploads found.');
+        } else {
+          console.log(`Found ${states.length} interrupted upload(s):\n`);
+          for (const state of states) {
+            console.log(formatResumeState(state));
+            console.log('---');
+          }
+          console.log('\nTo resume: dedpaste send --resume <session-id-or-path>');
+          console.log('To abort:  dedpaste send --abort-upload <session-id>');
+        }
+        return;
+      }
+
+      // Abort an interrupted upload
+      if (options.abortUpload) {
+        try {
+          await abortUpload(options.abortUpload);
+          console.log('Upload aborted successfully.');
+        } catch (error: any) {
+          console.error(`Failed to abort upload: ${error.message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      // Resume an interrupted upload
+      if (options.resume) {
+        try {
+          console.log('Resuming interrupted upload...');
+          const url = await resumeUpload(options.resume, {
+            showProgress: options.progress !== false,
+          });
+
+          // Handle clipboard and output
+          if (options.copy) {
+            try {
+              const cleanUrl = url.trim();
+              if (clipboard.default) {
+                clipboard.default.writeSync(cleanUrl);
+              } else {
+                clipboard.writeSync(cleanUrl);
+              }
+            } catch (error: any) {
+              console.error(`Unable to copy to clipboard: ${error.message}`);
+            }
+          }
+
+          if (options.output) {
+            console.log(url.trim());
+          } else {
+            console.log(`\n✓ Upload resumed and completed!\n${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}\n`);
+          }
+          process.exit(0);
+        } catch (error: any) {
+          console.error(`Failed to resume upload: ${error.message}`);
+          process.exit(1);
         }
         return;
       }
@@ -1345,40 +1439,88 @@ Encryption:
       try {
         // Extract filename if uploading a file
         const filename = options.file ? path.basename(options.file) : '';
+        let url: string;
 
-        const headers: Record<string, string> = {
-          'Content-Type': contentType,
-          'User-Agent': `dedpaste-cli/${packageJson.version}`
-        };
+        // Check if we should use multipart upload for large files
+        // Only use multipart for file uploads (not stdin) and files over threshold
+        const useMultipart = options.file &&
+          !shouldEncrypt && // Encrypted large files not yet supported in multipart
+          shouldUseMultipart(options.file);
 
-        // Include filename header if we have a file
-        if (filename) {
-          headers['X-Filename'] = filename;
+        if (useMultipart) {
+          // Large file - use multipart upload
+          console.log(`Large file detected (>${LARGE_FILE_CONSTANTS.MULTIPART_THRESHOLD / (1024 * 1024)}MB). Using multipart upload...`);
+
+          // Parse chunk size if provided
+          let chunkSize: number | undefined;
+          if (options.chunkSize) {
+            const chunkMb = parseInt(options.chunkSize, 10);
+            if (isNaN(chunkMb) || chunkMb < 5) {
+              console.error('Error: Chunk size must be at least 5 MB');
+              process.exit(1);
+            }
+            chunkSize = chunkMb * 1024 * 1024;
+          }
+
+          try {
+            url = await uploadLargeFile(options.file!, {
+              apiUrl: API_URL,
+              chunkSize,
+              isOneTime: options.temp,
+              isEncrypted: false, // Encryption handled separately
+              showProgress: options.progress !== false,
+            });
+          } catch (uploadError: any) {
+            console.error(`Large file upload failed: ${uploadError.message}`);
+            console.error('You can resume the upload later with: dedpaste send --resume <session-id>');
+            console.error('To see interrupted uploads: dedpaste send --list-uploads');
+            process.exit(1);
+          }
+
+          // Track paste creation for large files
+          analytics.trackPasteCreated({
+            type: options.temp ? 'one_time' : 'regular',
+            content_type: contentType,
+            size_bytes: fs.statSync(options.file!).size,
+            encryption_type: 'none',
+            method: 'file'  // Use 'file' as the method type
+          });
+        } else {
+          // Standard upload (small files or stdin)
+          const headers: Record<string, string> = {
+            'Content-Type': contentType,
+            'User-Agent': `dedpaste-cli/${packageJson.version}`
+          };
+
+          // Include filename header if we have a file
+          if (filename) {
+            headers['X-Filename'] = filename;
+          }
+
+          const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers,
+            body: content
+          });
+
+          if (!response.ok) {
+            console.error(`Error: ${response.status} ${response.statusText}`);
+            const errorText = await response.text();
+            console.error(errorText);
+            process.exit(1);
+          }
+
+          url = await response.text();
+
+          // Track paste creation
+          analytics.trackPasteCreated({
+            type: options.temp ? 'one_time' : 'regular',
+            content_type: contentType,
+            size_bytes: content.length,
+            encryption_type: options.encrypt ? 'RSA' : 'none',
+            method: options.file ? 'file' : 'stdin'
+          });
         }
-
-        const response = await fetch(`${API_URL}${endpoint}`, {
-          method: 'POST',
-          headers,
-          body: content
-        });
-        
-        if (!response.ok) {
-          console.error(`Error: ${response.status} ${response.statusText}`);
-          const errorText = await response.text();
-          console.error(errorText);
-          process.exit(1);
-        }
-        
-        const url = await response.text();
-
-        // Track paste creation
-        analytics.trackPasteCreated({
-          type: options.temp ? 'one_time' : 'regular',
-          content_type: contentType,
-          size_bytes: content.length,
-          encryption_type: options.encrypt ? 'RSA' : 'none',
-          method: options.file ? 'file' : 'stdin'
-        });
 
         // Copy to clipboard if requested
         if (options.copy) {
@@ -1393,7 +1535,7 @@ Encryption:
             console.error(`Unable to copy to clipboard: ${error.message}`);
           }
         }
-        
+
         // Output the result
         if (options.output) {
           console.log(url.trim());
@@ -1406,9 +1548,10 @@ Encryption:
               encryptionMessage = '🔒 This paste is encrypted and can only be decrypted with your private key\n';
             }
           }
-          
+
+          const isLargeFile = useMultipart;
           console.log(`
-✓ Paste created successfully!
+✓ Paste created successfully!${isLargeFile ? ' (multipart upload)' : ''}
 ${options.temp ? '⚠️  This is a one-time paste that will be deleted after first view\n' : ''}
 ${encryptionMessage}
 ${options.copy ? '📋 URL copied to clipboard: ' : '📋 '} ${url.trim()}
