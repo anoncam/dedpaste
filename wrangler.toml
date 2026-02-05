@@ -26,3 +26,8 @@ preview_id = "0d25f4b9e61a44ab92634e7941cea0a0"
 binding = "UPLOAD_SESSIONS"
 id = "c0251d912bb045df9c363b1b00be81a1"
 preview_id = "3e505a5b19a14816ba1105c7772a2a4c"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
