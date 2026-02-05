@@ -21,6 +21,7 @@
   "files": [
     "dist",
     "cli",
+    "src/types",
     "completion",
     "public",
     "README.md"
