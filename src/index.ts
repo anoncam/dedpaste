@@ -975,8 +975,7 @@ async function handleGet(
     return new Response("Paste not found", { status: 404 });
   }
 
-  // Regular paste - get the content and metadata
-  const content = await paste.arrayBuffer();
+  // Regular paste - get metadata (available without reading the body)
   let contentType = "text/plain";
   let filename = "";
 
@@ -1014,7 +1013,8 @@ async function handleGet(
     filename.endsWith(".markdown");
 
   if (isMarkdown && !isEncrypted && !wantsRaw) {
-    // Convert markdown to HTML for browser viewing
+    // Markdown rendering requires buffering the content into memory
+    const content = await paste.arrayBuffer();
     const textContent = new TextDecoder().decode(content);
     const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename);
 
@@ -1036,11 +1036,13 @@ async function handleGet(
   const isViewableInBrowser = isViewableContentType(contentType);
   const disposition = isViewableInBrowser ? "inline" : "attachment";
 
-  // Return the paste content with robust caching headers
-  return new Response(content, {
+  // Stream the R2 object body directly to avoid buffering large files in memory.
+  // This is critical for multipart-uploaded files which can be up to 5GB.
+  return new Response(paste.body, {
     headers: {
       "Content-Type": contentType,
       "Content-Disposition": `${disposition}; filename="${effectiveFilename}"`,
+      "Content-Length": paste.size.toString(),
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
       Pragma: "no-cache",
