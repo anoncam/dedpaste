@@ -76,7 +76,11 @@ export interface PasteOptions {
   silent?: boolean;
   output?: string;
   burn?: boolean;
+  /** Burn-after-reading count: number of reads before auto-deletion */
+  burnCount?: number;
   password?: string;
+  /** Expiration duration (e.g., "1h", "24h", "7d", "30d") */
+  expire?: string;
 }
 
 export interface PasteResponse {
@@ -85,6 +89,83 @@ export interface PasteResponse {
   expiresAt?: string;
   encrypted?: boolean;
   requiresPassword?: boolean;
+  /** Whether burn-after-reading is active */
+  isBurnAfterReading?: boolean;
+  /** Remaining reads before auto-deletion */
+  remainingReads?: number;
+}
+
+// ============================================
+// API v1 Response Types
+// ============================================
+
+/** Standard API v1 response wrapper */
+export interface ApiV1Response<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+    details?: Array<{
+      field: string;
+      message: string;
+      code: string;
+    }>;
+  };
+}
+
+/** API v1 paste creation response */
+export interface ApiV1PasteCreated {
+  id: string;
+  url: string;
+  isEncrypted: boolean;
+  isBurnAfterReading: boolean;
+  expiresAt?: string;
+  remainingReads?: number;
+}
+
+/** API v1 paste retrieval response */
+export interface ApiV1PasteData {
+  id: string;
+  content: string;
+  contentType: string;
+  filename: string | null;
+  size: number;
+  isOneTime: boolean;
+  isEncrypted: boolean;
+  createdAt: string;
+  expiresAt?: string;
+  remainingReads?: number;
+}
+
+/** API v1 health check response */
+export interface ApiV1HealthResponse {
+  status: "healthy" | "degraded" | "unhealthy";
+  version: string;
+  timestamp: string;
+  services: {
+    storage: "available" | "unavailable";
+    encryption: "available" | "unavailable";
+  };
+}
+
+// ============================================
+// Paste Lifecycle Types
+// ============================================
+
+/** Valid expiration duration presets */
+export type ExpirationPreset = "1h" | "6h" | "12h" | "24h" | "48h" | "7d" | "14d" | "30d";
+
+/** Paste lifecycle configuration */
+export interface PasteLifecycle {
+  /** When the paste expires (ISO 8601) */
+  expiresAt?: string;
+  /** Number of reads remaining for burn-after-reading */
+  remainingReads?: number;
+  /** Maximum reads for burn-after-reading */
+  maxReads?: number;
+  /** Whether the paste is a one-time paste */
+  isOneTime: boolean;
 }
 
 // PGP types

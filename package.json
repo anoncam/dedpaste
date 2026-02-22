@@ -43,7 +43,7 @@
   },
   "homepage": "https://github.com/anoncam/dedpaste#readme",
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",

@@ -1,6 +1,6 @@
 name = "dedpaste"
 main = "dist/index.js"
-compatibility_date = "2023-10-02"
+compatibility_date = "2025-01-01"
 
 # Build configuration
 [build]
