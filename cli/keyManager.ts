@@ -1,18 +1,18 @@
 // Key database structure and management functions
-import fs from 'fs';
-import path from 'path';
-import { promises as fsPromises } from 'fs';
-import { homedir } from 'os';
-import crypto from 'crypto';
-import type { KeyInfo, KeyDatabase } from '../src/types/index.js';
+import fs from "fs";
+import path from "path";
+import { promises as fsPromises } from "fs";
+import { homedir } from "os";
+import crypto from "crypto";
+import type { KeyInfo, KeyDatabase } from "../src/types/index.js";
 
 // Constants
-export const DEFAULT_KEY_DIR = path.join(homedir(), '.dedpaste', 'keys');
-export const FRIENDS_KEY_DIR = path.join(homedir(), '.dedpaste', 'friends');
-export const KEY_DB_PATH = path.join(homedir(), '.dedpaste', 'keydb.json');
-export const PGP_KEY_DIR = path.join(homedir(), '.dedpaste', 'pgp');
-export const KEYBASE_KEY_DIR = path.join(homedir(), '.dedpaste', 'keybase');
-export const GITHUB_KEY_DIR = path.join(homedir(), '.dedpaste', 'github');
+export const DEFAULT_KEY_DIR = path.join(homedir(), ".dedpaste", "keys");
+export const FRIENDS_KEY_DIR = path.join(homedir(), ".dedpaste", "friends");
+export const KEY_DB_PATH = path.join(homedir(), ".dedpaste", "keydb.json");
+export const PGP_KEY_DIR = path.join(homedir(), ".dedpaste", "pgp");
+export const KEYBASE_KEY_DIR = path.join(homedir(), ".dedpaste", "keybase");
+export const GITHUB_KEY_DIR = path.join(homedir(), ".dedpaste", "github");
 
 // Directory structure interface
 interface KeyDirectories {
@@ -23,6 +23,35 @@ interface KeyDirectories {
   GITHUB_KEY_DIR: string;
 }
 
+/**
+ * Sanitizes a key name to prevent path traversal attacks.
+ * Only allows alphanumeric characters, hyphens, dots, underscores, and @ signs.
+ */
+function sanitizeKeyName(name: string): string {
+  const sanitized = name.replace(/[^a-zA-Z0-9._@-]/g, "_");
+  // Prevent hidden files and directory traversal
+  if (sanitized.startsWith(".") || sanitized.includes("..")) {
+    throw new Error(`Invalid key name: "${name}" contains unsafe characters`);
+  }
+  return sanitized;
+}
+
+/**
+ * Validates that a resolved path stays within the intended directory.
+ */
+function validatePathWithinDir(resolvedPath: string, baseDir: string): void {
+  const normalizedBase = path.resolve(baseDir);
+  const normalizedPath = path.resolve(resolvedPath);
+  if (
+    !normalizedPath.startsWith(normalizedBase + path.sep) &&
+    normalizedPath !== normalizedBase
+  ) {
+    throw new Error(
+      "Path traversal detected: resolved path escapes the key directory",
+    );
+  }
+}
+
 // Ensure directories exist
 export async function ensureDirectories(): Promise<KeyDirectories> {
   await fsPromises.mkdir(DEFAULT_KEY_DIR, { recursive: true });
@@ -30,7 +59,13 @@ export async function ensureDirectories(): Promise<KeyDirectories> {
   await fsPromises.mkdir(PGP_KEY_DIR, { recursive: true });
   await fsPromises.mkdir(KEYBASE_KEY_DIR, { recursive: true });
   await fsPromises.mkdir(GITHUB_KEY_DIR, { recursive: true });
-  return { DEFAULT_KEY_DIR, FRIENDS_KEY_DIR, PGP_KEY_DIR, KEYBASE_KEY_DIR, GITHUB_KEY_DIR };
+  return {
+    DEFAULT_KEY_DIR,
+    FRIENDS_KEY_DIR,
+    PGP_KEY_DIR,
+    KEYBASE_KEY_DIR,
+    GITHUB_KEY_DIR,
+  };
 }
 
 // Initialize key database if it doesn't exist
@@ -42,11 +77,11 @@ async function initKeyDatabase(): Promise<KeyDatabase> {
         friends: {},
         pgp: {},
         keybase: {},
-        github: {}
+        github: {},
       },
       groups: {},
       default_friend: null,
-      last_used: null
+      last_used: null,
     };
 
     await fsPromises.writeFile(KEY_DB_PATH, JSON.stringify(defaultDb, null, 2));
@@ -54,7 +89,7 @@ async function initKeyDatabase(): Promise<KeyDatabase> {
   }
 
   // Read existing database
-  const dbContent = await fsPromises.readFile(KEY_DB_PATH, 'utf8');
+  const dbContent = await fsPromises.readFile(KEY_DB_PATH, "utf8");
   const db = JSON.parse(dbContent) as KeyDatabase;
 
   // Ensure new properties exist (for upgrades)
@@ -87,13 +122,13 @@ export async function saveKeyDatabase(db: KeyDatabase): Promise<void> {
 
 // Generate key fingerprint
 function generateFingerprint(keyContent: string): string {
-  const hash = crypto.createHash('sha256');
+  const hash = crypto.createHash("sha256");
   hash.update(keyContent);
-  const digest = hash.digest('hex');
-  
+  const digest = hash.digest("hex");
+
   // Format as colon-separated pairs
   const pairs = digest.match(/.{2}/g);
-  return pairs ? pairs.join(':') : digest;
+  return pairs ? pairs.join(":") : digest;
 }
 
 // Key pair generation result
@@ -107,67 +142,72 @@ interface KeyPairResult {
 // Generate a new key pair
 export async function generateKeyPair(): Promise<KeyPairResult> {
   const { DEFAULT_KEY_DIR } = await ensureDirectories();
-  const privateKeyPath = path.join(DEFAULT_KEY_DIR, 'private.pem');
-  const publicKeyPath = path.join(DEFAULT_KEY_DIR, 'public.pem');
-  
-  // Generate RSA key pair
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
-    modulusLength: 2048,
+  const privateKeyPath = path.join(DEFAULT_KEY_DIR, "private.pem");
+  const publicKeyPath = path.join(DEFAULT_KEY_DIR, "public.pem");
+
+  // Generate RSA key pair (4096-bit per NIST SP 800-57 recommendations)
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
+    modulusLength: 4096,
     publicKeyEncoding: {
-      type: 'spki',
-      format: 'pem'
+      type: "spki",
+      format: "pem",
     },
     privateKeyEncoding: {
-      type: 'pkcs8',
-      format: 'pem'
-    }
+      type: "pkcs8",
+      format: "pem",
+    },
   });
-  
+
   // Write keys to files
   await fsPromises.writeFile(privateKeyPath, privateKey);
   await fsPromises.writeFile(publicKeyPath, publicKey);
-  
+
   // Update key database
   const db = await loadKeyDatabase();
   db.keys.self = {
-    type: 'self',
-    name: 'self',
+    type: "self",
+    name: "self",
     path: publicKeyPath,
     private: privateKeyPath,
     public: publicKeyPath,
     fingerprint: generateFingerprint(publicKey),
-    created: new Date().toISOString()
+    created: new Date().toISOString(),
   };
   await saveKeyDatabase(db);
-  
+
   return { privateKeyPath, publicKeyPath, privateKey, publicKey };
 }
 
 // Add a friend's public key
-export async function addFriendKey(name: string, keyContent: string): Promise<string> {
+export async function addFriendKey(
+  name: string,
+  keyContent: string,
+): Promise<string> {
+  const safeName = sanitizeKeyName(name);
   const { FRIENDS_KEY_DIR } = await ensureDirectories();
-  const keyPath = path.join(FRIENDS_KEY_DIR, `${name}.pem`);
-  
+  const keyPath = path.join(FRIENDS_KEY_DIR, `${safeName}.pem`);
+  validatePathWithinDir(keyPath, FRIENDS_KEY_DIR);
+
   // Write key to file
   await fsPromises.writeFile(keyPath, keyContent);
-  
+
   // Update key database
   const db = await loadKeyDatabase();
   db.keys.friends[name] = {
-    type: 'friend',
+    type: "friend",
     name: name,
     path: keyPath,
     public: keyPath,
     fingerprint: generateFingerprint(keyContent),
     addedDate: new Date().toISOString(),
-    lastUsed: new Date().toISOString()
+    lastUsed: new Date().toISOString(),
   };
-  
+
   // Set as default if it's the first friend
   if (!db.default_friend) {
     db.default_friend = name;
   }
-  
+
   await saveKeyDatabase(db);
   return keyPath;
 }
@@ -185,42 +225,47 @@ export async function listKeys(): Promise<KeyDatabase> {
  * kb:username -> keybase:username
  */
 function normalizeKeyName(name: string): string {
-  if (name.startsWith('gh:')) {
-    return name.replace('gh:', 'github:');
+  if (name.startsWith("gh:")) {
+    return name.replace("gh:", "github:");
   }
-  if (name.startsWith('kb:')) {
-    return name.replace('kb:', 'keybase:');
+  if (name.startsWith("kb:")) {
+    return name.replace("kb:", "keybase:");
   }
   return name;
 }
 
-export async function getKey(type: string, name?: string): Promise<KeyInfo | null> {
+export async function getKey(
+  type: string,
+  name?: string,
+): Promise<KeyInfo | null> {
   const db = await loadKeyDatabase();
 
-  if (type === 'self') {
+  if (type === "self") {
     return db.keys.self;
-  } else if (type === 'friend' && name) {
+  } else if (type === "friend" && name) {
     const normalizedName = normalizeKeyName(name);
     return db.keys.friends[normalizedName] || null;
-  } else if (type === 'pgp' && name) {
+  } else if (type === "pgp" && name) {
     const normalizedName = normalizeKeyName(name);
     return db.keys.pgp[normalizedName] || null;
-  } else if (type === 'keybase' && name) {
+  } else if (type === "keybase" && name) {
     const normalizedName = normalizeKeyName(name);
     return db.keys.keybase[normalizedName] || null;
-  } else if (type === 'github' && name) {
+  } else if (type === "github" && name) {
     const normalizedName = normalizeKeyName(name);
     return db.keys.github[normalizedName] || null;
-  } else if (type === 'any' && name) {
+  } else if (type === "any" && name) {
     // Normalize the name first
     const normalizedName = normalizeKeyName(name);
 
     // Try to find the key in any of the collections
-    return db.keys.friends[normalizedName] ||
-           db.keys.pgp[normalizedName] ||
-           db.keys.keybase[normalizedName] ||
-           db.keys.github[normalizedName] ||
-           null;
+    return (
+      db.keys.friends[normalizedName] ||
+      db.keys.pgp[normalizedName] ||
+      db.keys.keybase[normalizedName] ||
+      db.keys.github[normalizedName] ||
+      null
+    );
   }
 
   return null;
@@ -229,45 +274,54 @@ export async function getKey(type: string, name?: string): Promise<KeyInfo | nul
 // Remove a key
 export async function removeKey(type: string, name: string): Promise<boolean> {
   const db = await loadKeyDatabase();
-  
-  if (type === 'friend' && db.keys.friends[name]) {
+
+  if (type === "friend" && db.keys.friends[name]) {
     // Remove the key file
     await fsPromises.unlink(db.keys.friends[name].public!);
-    
+
     // Remove from database
     delete db.keys.friends[name];
-    
+
     // Update default friend if needed
     if (db.default_friend === name) {
       const friendNames = Object.keys(db.keys.friends);
       db.default_friend = friendNames.length > 0 ? friendNames[0] : null;
     }
-    
+
     await saveKeyDatabase(db);
     return true;
-  } else if (type === 'pgp' && db.keys.pgp[name]) {
+  } else if (type === "pgp" && db.keys.pgp[name]) {
     // Remove the key file
-    const pgpPath = typeof db.keys.pgp[name].path === 'string' ? db.keys.pgp[name].path : db.keys.pgp[name].path.public;
+    const pgpPath =
+      typeof db.keys.pgp[name].path === "string"
+        ? db.keys.pgp[name].path
+        : db.keys.pgp[name].path.public;
     await fsPromises.unlink(pgpPath);
-    
+
     // Remove from database
     delete db.keys.pgp[name];
-    
+
     await saveKeyDatabase(db);
     return true;
-  } else if (type === 'keybase' && db.keys.keybase[name]) {
+  } else if (type === "keybase" && db.keys.keybase[name]) {
     // Remove the key file
-    const keybasePath = typeof db.keys.keybase[name].path === 'string' ? db.keys.keybase[name].path : db.keys.keybase[name].path.public;
+    const keybasePath =
+      typeof db.keys.keybase[name].path === "string"
+        ? db.keys.keybase[name].path
+        : db.keys.keybase[name].path.public;
     await fsPromises.unlink(keybasePath);
-    
+
     // Remove from database
     delete db.keys.keybase[name];
-    
+
     await saveKeyDatabase(db);
     return true;
-  } else if (type === 'github' && db.keys.github[name]) {
+  } else if (type === "github" && db.keys.github[name]) {
     // Remove the key file
-    const githubPath = typeof db.keys.github[name].path === 'string' ? db.keys.github[name].path : db.keys.github[name].path.public;
+    const githubPath =
+      typeof db.keys.github[name].path === "string"
+        ? db.keys.github[name].path
+        : db.keys.github[name].path.public;
     await fsPromises.unlink(githubPath);
 
     // Remove from database
@@ -275,16 +329,16 @@ export async function removeKey(type: string, name: string): Promise<boolean> {
 
     await saveKeyDatabase(db);
     return true;
-  } else if (type === 'any') {
+  } else if (type === "any") {
     // Try to remove from any collection
     if (db.keys.friends[name]) {
-      return await removeKey('friend', name);
+      return await removeKey("friend", name);
     } else if (db.keys.pgp[name]) {
-      return await removeKey('pgp', name);
+      return await removeKey("pgp", name);
     } else if (db.keys.keybase[name]) {
-      return await removeKey('keybase', name);
+      return await removeKey("keybase", name);
     } else if (db.keys.github[name]) {
-      return await removeKey('github', name);
+      return await removeKey("github", name);
     }
   }
 
@@ -294,7 +348,7 @@ export async function removeKey(type: string, name: string): Promise<boolean> {
 // Update last used timestamp
 export async function updateLastUsed(name: string): Promise<void> {
   const db = await loadKeyDatabase();
-  
+
   if (db.keys.friends[name]) {
     db.keys.friends[name].lastUsed = new Date().toISOString();
     db.last_used = name;
@@ -315,25 +369,30 @@ interface PgpKeyAddInfo {
  * @param keyInfo - Key information
  * @returns Path to the stored key
  */
-export async function addPgpKey(name: string, keyInfo: PgpKeyAddInfo): Promise<string> {
+export async function addPgpKey(
+  name: string,
+  keyInfo: PgpKeyAddInfo,
+): Promise<string> {
+  const safeName = sanitizeKeyName(name);
   const { PGP_KEY_DIR } = await ensureDirectories();
-  const keyPath = path.join(PGP_KEY_DIR, `${name}.asc`);
-  
+  const keyPath = path.join(PGP_KEY_DIR, `${safeName}.asc`);
+  validatePathWithinDir(keyPath, PGP_KEY_DIR);
+
   // Write key to file
   await fsPromises.writeFile(keyPath, keyInfo.key);
-  
+
   // Update key database
   const db = await loadKeyDatabase();
   db.keys.pgp[name] = {
-    type: 'pgp',
+    type: "pgp",
     name: name,
     path: keyPath,
     fingerprint: keyInfo.keyId,
     email: keyInfo.email,
     addedDate: new Date().toISOString(),
-    lastUsed: new Date().toISOString()
+    lastUsed: new Date().toISOString(),
   };
-  
+
   await saveKeyDatabase(db);
   return keyPath;
 }
@@ -352,9 +411,14 @@ interface KeybaseKeyAddInfo {
  * @param keyInfo - Key information
  * @returns Path to the stored key
  */
-export async function addKeybaseKey(name: string, keyInfo: KeybaseKeyAddInfo): Promise<string> {
+export async function addKeybaseKey(
+  name: string,
+  keyInfo: KeybaseKeyAddInfo,
+): Promise<string> {
+  const safeName = sanitizeKeyName(name);
   const { KEYBASE_KEY_DIR } = await ensureDirectories();
-  const keyPath = path.join(KEYBASE_KEY_DIR, `${name}.asc`);
+  const keyPath = path.join(KEYBASE_KEY_DIR, `${safeName}.asc`);
+  validatePathWithinDir(keyPath, KEYBASE_KEY_DIR);
 
   // Write key to file
   await fsPromises.writeFile(keyPath, keyInfo.key);
@@ -362,14 +426,14 @@ export async function addKeybaseKey(name: string, keyInfo: KeybaseKeyAddInfo): P
   // Update key database
   const db = await loadKeyDatabase();
   db.keys.keybase[name] = {
-    type: 'keybase',
+    type: "keybase",
     name: name,
     path: keyPath,
     username: keyInfo.username,
     fingerprint: keyInfo.keyId,
     email: keyInfo.email,
     addedDate: new Date().toISOString(),
-    lastUsed: new Date().toISOString()
+    lastUsed: new Date().toISOString(),
   };
 
   await saveKeyDatabase(db);
@@ -396,10 +460,12 @@ export async function addGitHubKey(
   name: string,
   username: string,
   keyInfo: GitHubKeyAddInfo,
-  keyData: string
+  keyData: string,
 ): Promise<string> {
+  const safeName = sanitizeKeyName(name);
   const { GITHUB_KEY_DIR } = await ensureDirectories();
-  const keyPath = path.join(GITHUB_KEY_DIR, `${name}.asc`);
+  const keyPath = path.join(GITHUB_KEY_DIR, `${safeName}.asc`);
+  validatePathWithinDir(keyPath, GITHUB_KEY_DIR);
 
   // Write key to file
   await fsPromises.writeFile(keyPath, keyData);
@@ -407,7 +473,7 @@ export async function addGitHubKey(
   // Update key database
   const db = await loadKeyDatabase();
   db.keys.github[name] = {
-    type: 'github',
+    type: "github",
     name: name,
     path: keyPath,
     username: username,
@@ -416,7 +482,7 @@ export async function addGitHubKey(
     created: keyInfo.created,
     addedDate: new Date().toISOString(),
     lastUsed: new Date().toISOString(),
-    lastFetched: keyInfo.lastFetched || new Date().toISOString()
+    lastFetched: keyInfo.lastFetched || new Date().toISOString(),
   };
 
   await saveKeyDatabase(db);
