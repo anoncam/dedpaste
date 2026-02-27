@@ -404,13 +404,13 @@ jobs:
           echo "This release is immutable and includes cryptographic build provenance attestations." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "**Verify this release:**" >> RELEASE_NOTES.md
-          echo "\`\`\`bash" >> RELEASE_NOTES.md
+          echo '```bash' >> RELEASE_NOTES.md
           echo "# Verify SBOM" >> RELEASE_NOTES.md
           echo "gh attestation verify bom.json --owner anoncam --repo dedpaste" >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "# Verify build artifacts" >> RELEASE_NOTES.md
           echo "gh attestation verify <artifact-path> --owner anoncam --repo dedpaste" >> RELEASE_NOTES.md
-          echo "\`\`\`" >> RELEASE_NOTES.md
+          echo '```' >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "This ensures the artifacts have not been tampered with and were built by the official GitHub Actions workflow." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
