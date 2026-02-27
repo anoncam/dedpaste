@@ -382,6 +382,27 @@ Each release includes:
 - Comprehensive Software Bill of Materials (SBOM)
 - Detailed release notes
 - NPM package with provenance
+- **Immutable releases** with cryptographic attestations for supply chain security
+
+### 🔐 Verifying Releases
+
+All releases are immutable and include signed build provenance attestations. You can verify the authenticity and integrity of releases using the GitHub CLI:
+
+```bash
+# Install GitHub CLI if you haven't already
+# See: https://cli.github.com/
+
+# Verify a release artifact
+gh attestation verify <artifact-path> --owner anoncam --repo dedpaste
+
+# Example: Verify the SBOM
+gh attestation verify bom.json --owner anoncam --repo dedpaste
+```
+
+This ensures that:
+- Release artifacts have not been tampered with
+- Artifacts were built by the official GitHub Actions workflow
+- The build is traceable to specific commits and workflows
 
 View all releases: [GitHub Releases](https://github.com/anoncam/dedpaste/releases)
 
