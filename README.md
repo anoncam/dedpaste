@@ -386,7 +386,9 @@ Each release includes:
 
 ### 🔐 Verifying Releases
 
-All releases include signed build provenance attestations, and can be configured to be immutable when the repository owner enables release immutability in GitHub repository settings (Settings → Code and automation → Releases). You can verify the authenticity and integrity of releases using the GitHub CLI:
+All releases include signed build provenance attestations. Releases can be configured to be immutable when the repository owner enables release immutability in GitHub repository settings (Settings → Code and automation → Releases). 
+
+You can verify the authenticity and integrity of releases using the GitHub CLI:
 
 ```bash
 # Install GitHub CLI if you haven't already
