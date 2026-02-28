@@ -554,8 +554,10 @@ jobs:
         # No NODE_AUTH_TOKEN needed - using npm Trusted Publishers (OIDC)
 
       - name: Release complete
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           echo "✅ Release process complete"
-          echo "Version: v${{ steps.version.outputs.version }}"
+          echo "Version: v$RELEASE_VERSION"
           echo "Release URL: ${{ steps.create_release.outputs.url }}"
           echo "SBOM and detailed release notes published to GitHub release"
