@@ -400,8 +400,8 @@ jobs:
           echo "### SBOM Information" >> RELEASE_NOTES.md
           echo "This release includes a Software Bill of Materials (SBOM) in CycloneDX format." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
-          echo "### 🔐 Immutable Release" >> RELEASE_NOTES.md
-          echo "This release is immutable and includes cryptographic build provenance attestations." >> RELEASE_NOTES.md
+          echo "### 🔐 Verified Release" >> RELEASE_NOTES.md
+          echo "This release includes cryptographic build provenance attestations. For immutable releases, ensure Release Immutability is enabled in this repository's settings (Settings → Code and automation → Releases)." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "**Verify this release:**" >> RELEASE_NOTES.md
           echo '```bash' >> RELEASE_NOTES.md
@@ -506,6 +506,16 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Attest build provenance for SBOM
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ./bom.json
+
+      - name: Attest build provenance for build artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*'
+
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -521,16 +531,6 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Attest build provenance for SBOM
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: ./bom.json
-
-      - name: Attest build provenance for build artifacts
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: 'dist/*'
 
       - name: Publish to NPM
         if: success()

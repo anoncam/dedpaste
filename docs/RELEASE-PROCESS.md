@@ -82,10 +82,10 @@ Our release workflow automatically:
    - Creates tamper-evident signatures
    - Links artifacts to specific workflow runs and commits
 
-3. **Publishes immutable releases**
-   - All releases are immutable by default (enabled at repository settings)
-   - Release artifacts cannot be modified after publication
-   - Tags cannot be moved or deleted
+3. **Publishes releases with attestations**
+   - When immutable releases are enabled in the repository settings (Settings → Code and automation → Releases), all newly created releases become immutable
+   - Release artifacts cannot be modified after publication when immutability is enabled
+   - Tags cannot be moved or deleted when immutability is enabled
 
 ### Verifying Releases
 
