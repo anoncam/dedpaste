@@ -83,9 +83,9 @@ Our release workflow automatically:
    - Links artifacts to specific workflow runs and commits
 
 3. **Publishes releases with attestations**
-   - When enabled in repository settings (Settings → Code and automation → Releases), newly created releases become immutable
-   - Release artifacts cannot be modified after publication when immutability is enabled
-   - Tags cannot be moved or deleted when immutability is enabled
+   - Release immutability is enabled in this repository (Settings → Code and automation → Releases)
+   - All releases are immutable: artifacts cannot be modified after publication
+   - Tags cannot be moved or deleted
 
 ### Verifying Releases
 

@@ -401,7 +401,7 @@ jobs:
           echo "This release includes a Software Bill of Materials (SBOM) in CycloneDX format." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "### 🔐 Verified Release" >> RELEASE_NOTES.md
-          echo "This release includes cryptographic build provenance attestations. To prevent modification or deletion of this release, enable Release Immutability in repository settings (Settings → Code and automation → Releases)." >> RELEASE_NOTES.md
+          echo "This release includes cryptographic build provenance attestations and is immutable (artifacts and tags cannot be modified or deleted). Release immutability is enabled in this repository." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
           echo "**Verify this release:**" >> RELEASE_NOTES.md
           echo '```bash' >> RELEASE_NOTES.md

@@ -382,11 +382,11 @@ Each release includes:
 - Comprehensive Software Bill of Materials (SBOM)
 - Detailed release notes
 - NPM package with provenance
-- **Cryptographic attestations** for supply chain security (releases can be made immutable when enabled in repository settings)
+- **Cryptographic attestations** for supply chain security with immutable releases
 
 ### 🔐 Verifying Releases
 
-All releases include signed build provenance attestations. To make releases immutable (preventing modification or deletion), enable release immutability in repository settings (Settings → Code and automation → Releases). 
+All releases include signed build provenance attestations and are immutable (preventing modification or deletion of artifacts and tags). Release immutability is enabled in this repository's settings. 
 
 You can verify the authenticity and integrity of releases using the GitHub CLI:
 
