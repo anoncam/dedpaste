@@ -7,7 +7,8 @@ name: Release with SBOM and Notes
 permissions:
   contents: write  # Needed for creating releases and tags
   actions: read    # Needed to read workflow runs
-  id-token: write  # Needed for npm provenance
+  id-token: write  # Needed for npm provenance and build attestations
+  attestations: write  # Needed for build provenance attestations
 
 on:
   # Allow manual triggering for specific versions
@@ -399,6 +400,20 @@ jobs:
           echo "### SBOM Information" >> RELEASE_NOTES.md
           echo "This release includes a Software Bill of Materials (SBOM) in CycloneDX format." >> RELEASE_NOTES.md
           echo "" >> RELEASE_NOTES.md
+          echo "### 🔐 Verified Release" >> RELEASE_NOTES.md
+          echo "This release includes cryptographic build provenance attestations and is immutable (artifacts and tags cannot be modified or deleted). Release immutability is enabled in this repository." >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "**Verify this release:**" >> RELEASE_NOTES.md
+          echo '```bash' >> RELEASE_NOTES.md
+          echo "# Verify SBOM" >> RELEASE_NOTES.md
+          echo "gh attestation verify bom.json --owner anoncam --repo dedpaste" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "# Verify build artifacts" >> RELEASE_NOTES.md
+          echo "gh attestation verify <artifact-path> --owner anoncam --repo dedpaste" >> RELEASE_NOTES.md
+          echo '```' >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "This ensures the artifacts have not been tampered with and were built by the official GitHub Actions workflow." >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
 
           # Escape special characters for GitHub Actions output
           NOTES=$(cat RELEASE_NOTES.md)
@@ -420,7 +435,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # Needed for creating releases
-      id-token: write  # Needed for npm provenance
+      id-token: write  # Needed for npm provenance and build attestations
+      attestations: write  # Needed for build provenance attestations
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -489,6 +505,16 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
+
+      - name: Attest build provenance for SBOM
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ./bom.json
+
+      - name: Attest build provenance for build artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'dist/*'
 
       - name: Create GitHub Release
         id: create_release
