@@ -556,8 +556,9 @@ jobs:
       - name: Release complete
         env:
           RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_URL: ${{ steps.create_release.outputs.url }}
         run: |
           echo "✅ Release process complete"
           echo "Version: v$RELEASE_VERSION"
-          echo "Release URL: ${{ steps.create_release.outputs.url }}"
+          echo "Release URL: $RELEASE_URL"
           echo "SBOM and detailed release notes published to GitHub release"
