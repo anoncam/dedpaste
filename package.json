@@ -46,7 +46,8 @@
     "node": ">=18"
   },
   "overrides": {
-    "undici": "7.24.4"
+    "undici": "7.24.4",
+    "serialize-javascript": "7.0.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250303.0",
