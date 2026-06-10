@@ -112,7 +112,8 @@ const MAX_STANDARD_UPLOAD_SIZE = 25 * 1024 * 1024;
 const VIEWER_HIGHLIGHT_MAX_SIZE = 500 * 1024;
 
 // Pastes larger than this skip the HTML viewer entirely and stream raw bytes
-const VIEWER_MAX_SIZE = 5 * 1024 * 1024;
+// (kept small because the viewer must buffer the full body in Worker memory)
+const VIEWER_MAX_SIZE = 1024 * 1024;
 
 // Map of filename extensions to registered highlight.js language names
 const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
@@ -575,7 +576,6 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       return new Response(generateHomepage(), {
         headers: {
           'Content-Type': 'text/html',
-          'Access-Control-Allow-Origin': '*',
         },
       });
     }
@@ -1006,7 +1006,7 @@ async function handleGet(
       filename.endsWith('.md') ||
       filename.endsWith('.markdown');
 
-    if (isMarkdown && !isEncrypted && !wantsRaw) {
+    if (isMarkdown && !isEncrypted && wantsBrowserView) {
       // Convert markdown to HTML for browser viewing
       const textContent = new TextDecoder().decode(content);
       const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename, true);
@@ -1138,7 +1138,7 @@ async function handleGet(
     filename.endsWith('.md') ||
     filename.endsWith('.markdown');
 
-  if (isMarkdown && !isEncrypted && !wantsRaw) {
+  if (isMarkdown && !isEncrypted && wantsBrowserView) {
     // Markdown rendering requires buffering the content into memory
     const content = await paste.arrayBuffer();
     const textContent = new TextDecoder().decode(content);
@@ -2120,7 +2120,8 @@ function sanitizeHtml(html: string): string {
   html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
   html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
 
-  // Remove dangerous self-closing/void tags
+  // Remove dangerous self-closing/void tags. svg/math open foreign-content
+  // parsing contexts where script execution is possible, so they are banned too.
   const dangerousTags = [
     'iframe',
     'object',
@@ -2134,6 +2135,8 @@ function sanitizeHtml(html: string): string {
     'link',
     'meta',
     'base',
+    'svg',
+    'math',
   ];
   for (const tag of dangerousTags) {
     const openClose = new RegExp(`<${tag}\\b[^<]*(?:(?!<\\/${tag}>)<[^<]*)*<\\/${tag}>`, 'gi');
@@ -2142,19 +2145,25 @@ function sanitizeHtml(html: string): string {
     html = html.replace(selfClose, '');
   }
 
-  // Remove event handler attributes (on*)
-  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  // Remove event handler attributes (on*). The leading character may be
+  // whitespace, a quote closing the previous attribute value, or a slash,
+  // so capture and preserve it rather than requiring whitespace.
+  html = html.replace(/([\s"'/])on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
 
-  // Remove javascript: and vbscript: URLs in href/src/action attributes
-  html = html.replace(
-    /(href|src|action)\s*=\s*(?:"[^"]*javascript:[^"]*"|'[^']*javascript:[^']*')/gi,
-    '$1=""'
-  );
-  html = html.replace(
-    /(href|src|action)\s*=\s*(?:"[^"]*vbscript:[^"]*"|'[^']*vbscript:[^']*')/gi,
-    '$1=""'
-  );
-  html = html.replace(/(href|src|action)\s*=\s*(?:"[^"]*data:[^"]*"|'[^']*data:[^']*')/gi, '$1=""');
+  // Remove style attributes (CSS url(javascript:...) and similar vectors)
+  html = html.replace(/([\s"'/])style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
+
+  // Remove javascript:, vbscript:, and data: URLs in href/src/action
+  // attributes — quoted or unquoted
+  for (const scheme of ['javascript', 'vbscript', 'data']) {
+    html = html.replace(
+      new RegExp(
+        `(href|src|action)\\s*=\\s*(?:"[^"]*${scheme}:[^"]*"|'[^']*${scheme}:[^']*'|\\s*${scheme}:[^\\s>]*)`,
+        'gi'
+      ),
+      '$1=""'
+    );
+  }
 
   return html;
 }
