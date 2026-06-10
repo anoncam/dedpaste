@@ -1,49 +1,49 @@
-import { marked } from "marked";
-import hljs from "highlight.js/lib/core";
+import { marked } from 'marked';
+import hljs from 'highlight.js/lib/core';
 // Import only the languages we want to support to keep bundle size down
-import javascript from "highlight.js/lib/languages/javascript";
-import typescript from "highlight.js/lib/languages/typescript";
-import python from "highlight.js/lib/languages/python";
-import json from "highlight.js/lib/languages/json";
-import xml from "highlight.js/lib/languages/xml"; // HTML, XML
-import css from "highlight.js/lib/languages/css";
-import markdown from "highlight.js/lib/languages/markdown";
-import bash from "highlight.js/lib/languages/bash";
-import yaml from "highlight.js/lib/languages/yaml";
-import sql from "highlight.js/lib/languages/sql";
-import java from "highlight.js/lib/languages/java";
-import cpp from "highlight.js/lib/languages/cpp";
-import go from "highlight.js/lib/languages/go";
-import rust from "highlight.js/lib/languages/rust";
-import ruby from "highlight.js/lib/languages/ruby";
-import php from "highlight.js/lib/languages/php";
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import json from 'highlight.js/lib/languages/json';
+import xml from 'highlight.js/lib/languages/xml'; // HTML, XML
+import css from 'highlight.js/lib/languages/css';
+import markdown from 'highlight.js/lib/languages/markdown';
+import bash from 'highlight.js/lib/languages/bash';
+import yaml from 'highlight.js/lib/languages/yaml';
+import sql from 'highlight.js/lib/languages/sql';
+import java from 'highlight.js/lib/languages/java';
+import cpp from 'highlight.js/lib/languages/cpp';
+import go from 'highlight.js/lib/languages/go';
+import rust from 'highlight.js/lib/languages/rust';
+import ruby from 'highlight.js/lib/languages/ruby';
+import php from 'highlight.js/lib/languages/php';
 
 // Import MUI styles
-import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from "./muiStyles";
+import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from './muiStyles';
 
 // Import analytics
-import { createAnalytics, WorkerAnalytics } from "./analytics";
+import { createAnalytics, WorkerAnalytics } from './analytics';
 
 // Register languages with highlight.js
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("xml", xml);
-hljs.registerLanguage("html", xml); // HTML is handled by XML
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("sh", bash); // Shell alias
-hljs.registerLanguage("yaml", yaml);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("cpp", cpp);
-hljs.registerLanguage("c++", cpp); // C++ alias
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("ruby", ruby);
-hljs.registerLanguage("php", php);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('html', xml); // HTML is handled by XML
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('sh', bash); // Shell alias
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('c++', cpp); // C++ alias
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('ruby', ruby);
+hljs.registerLanguage('php', php);
 
 // Import multipart upload types
 import type {
@@ -55,11 +55,11 @@ import type {
   MultipartCompleteRequest,
   MultipartCompleteResponse,
   UploadStatusResponse,
-} from "./types";
-import { LARGE_FILE_CONSTANTS } from "./types";
+} from './types';
+import { LARGE_FILE_CONSTANTS } from './types';
 
 // Import service layer
-import { createServices, parseDuration } from "./services";
+import { createServices, parseDuration } from './services';
 
 // Import validation
 import {
@@ -67,10 +67,10 @@ import {
   validateWebUpload,
   checkValidation,
   parseJsonBody,
-} from "./validation";
+} from './validation';
 
 // Import API v1 router
-import { routeApiV1 } from "./api/v1";
+import { routeApiV1 } from './api/v1';
 
 // Define the environment interface for Cloudflare Workers
 type Env = {
@@ -94,33 +94,33 @@ type PasteMetadata = {
 
 // For one-time pastes, we'll use a completely different key format
 // with a prefix to make identifying them clear
-const ONE_TIME_PREFIX = "onetime-";
+const ONE_TIME_PREFIX = 'onetime-';
 
 // Maximum upload size for standard (non-multipart) uploads: 25MB
 const MAX_STANDARD_UPLOAD_SIZE = 25 * 1024 * 1024;
 
 // Allowed CORS origin (restrict from wildcard)
-const ALLOWED_ORIGIN = "https://paste.d3d.dev";
+const ALLOWED_ORIGIN = 'https://paste.d3d.dev';
 
 /** Security headers applied to all responses */
 const SECURITY_HEADERS: Record<string, string> = {
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-  "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "X-XSS-Protection": "1; mode=block",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'X-XSS-Protection': '1; mode=block',
 };
 
 /** Get CORS origin header based on request origin */
 function getCorsOrigin(request?: Request): string {
   if (!request) return ALLOWED_ORIGIN;
-  const origin = request.headers.get("Origin") || "";
+  const origin = request.headers.get('Origin') || '';
   // Allow the primary domain and localhost for development
   if (
     origin === ALLOWED_ORIGIN ||
-    origin.startsWith("http://localhost:") ||
-    origin.startsWith("http://127.0.0.1:")
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:')
   ) {
     return origin;
   }
@@ -134,16 +134,16 @@ function withSecurityHeaders(response: Response, request?: Request): Response {
     newHeaders.set(key, value);
   }
   // Set CSP for HTML responses
-  const contentType = newHeaders.get("Content-Type") || "";
-  if (contentType.includes("text/html")) {
+  const contentType = newHeaders.get('Content-Type') || '';
+  if (contentType.includes('text/html')) {
     newHeaders.set(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';",
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';"
     );
   }
   // Restrict CORS
-  if (newHeaders.has("Access-Control-Allow-Origin")) {
-    newHeaders.set("Access-Control-Allow-Origin", getCorsOrigin(request));
+  if (newHeaders.has('Access-Control-Allow-Origin')) {
+    newHeaders.set('Access-Control-Allow-Origin', getCorsOrigin(request));
   }
   return new Response(response.body, {
     status: response.status,
@@ -154,11 +154,10 @@ function withSecurityHeaders(response: Response, request?: Request): Response {
 
 // Generate a cryptographically secure random ID for the paste
 function generateId(length = 16): string {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const randomValues = new Uint32Array(length);
   crypto.getRandomValues(randomValues);
-  let result = "";
+  let result = '';
   for (let i = 0; i < length; i++) {
     result += chars.charAt(randomValues[i] % chars.length);
   }
@@ -179,7 +178,7 @@ interface ViewedPasteTracker {
 const viewedPastes: ViewedPasteTracker = {};
 
 // KV namespace key for tracking viewed pastes (to persist across worker restarts/instances)
-const VIEWED_PASTES_KEY = "viewed_pastes_registry";
+const VIEWED_PASTES_KEY = 'viewed_pastes_registry';
 
 // Helper function to safely parse JSON with a default value
 function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
@@ -187,27 +186,19 @@ function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
   try {
     return JSON.parse(jsonString) as T;
   } catch (e) {
-    console.error("Error parsing JSON:", e);
+    console.error('Error parsing JSON:', e);
     return defaultValue;
   }
 }
 
 export default {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const response = await handleRequest(request, env, ctx);
     return withSecurityHeaders(response, request);
   },
 };
 
-async function handleRequest(
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext,
-): Promise<Response> {
+async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   // Initialize analytics
   const analytics = createAnalytics(env);
 
@@ -218,32 +209,28 @@ async function handleRequest(
   // Initialize viewedPastes from KV store if available (completely optional enhancement)
   try {
     if (env.PASTE_METADATA) {
-      const storedViewedPastes =
-        await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
+      const storedViewedPastes = await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
       if (storedViewedPastes) {
-        const parsedPastes = safeJsonParse<ViewedPasteTracker>(
-          storedViewedPastes,
-          {},
-        );
+        const parsedPastes = safeJsonParse<ViewedPasteTracker>(storedViewedPastes, {});
         // Merge with any in-memory pastes (newer ones take precedence)
         Object.assign(viewedPastes, parsedPastes);
       }
     }
   } catch (error) {
     // Log but continue without error - KV is an enhancement, not a requirement
-    console.log("[KV] Optional paste metadata storage not available:", error);
+    console.log('[KV] Optional paste metadata storage not available:', error);
   }
   const url = new URL(request.url);
   const path = url.pathname;
 
   // Handle OPTIONS requests for CORS
-  if (request.method === "OPTIONS") {
+  if (request.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
-        "Access-Control-Allow-Origin": getCorsOrigin(request),
-        "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-        "Access-Control-Allow-Headers":
-          "Content-Type, X-Filename, X-Content-Type, X-One-Time, X-Expire, X-Burn-Reads, Authorization",
+        'Access-Control-Allow-Origin': getCorsOrigin(request),
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+        'Access-Control-Allow-Headers':
+          'Content-Type, X-Filename, X-Content-Type, X-One-Time, X-Expire, X-Burn-Reads, Authorization',
       },
     });
   }
@@ -257,25 +244,25 @@ async function handleRequest(
   }
 
   // Upload a new paste
-  if (request.method === "POST") {
+  if (request.method === 'POST') {
     // Handle API uploads for web interface
-    if (path === "/api/upload") {
+    if (path === '/api/upload') {
       return await handleWebUpload(request, env);
     }
 
-    if (path === "/api/text") {
+    if (path === '/api/text') {
       return await handleTextUpload(request, env);
     }
 
     // Handle regular uploads
-    if (path === "/upload" || path === "/temp") {
-      const isOneTime = path === "/temp";
+    if (path === '/upload' || path === '/temp') {
+      const isOneTime = path === '/temp';
       return await handleUpload(request, env, isOneTime, false, analytics);
     }
 
     // Handle encrypted uploads
-    if (path === "/e/upload" || path === "/e/temp") {
-      const isOneTime = path === "/e/temp";
+    if (path === '/e/upload' || path === '/e/temp') {
+      const isOneTime = path === '/e/temp';
       return await handleUpload(request, env, isOneTime, true, analytics);
     }
 
@@ -284,24 +271,17 @@ async function handleRequest(
     // ============================================
 
     // Initialize multipart upload
-    if (path === "/upload/init" || path === "/e/upload/init") {
-      const isEncrypted = path.startsWith("/e/");
+    if (path === '/upload/init' || path === '/e/upload/init') {
+      const isEncrypted = path.startsWith('/e/');
       return await handleMultipartInit(request, env, isEncrypted);
     }
 
     // Complete multipart upload
-    const completeMatch = path.match(
-      /^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/complete$/,
-    );
+    const completeMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/complete$/);
     if (completeMatch) {
       const isEncrypted = !!completeMatch[1];
       const sessionId = completeMatch[2];
-      return await handleMultipartComplete(
-        request,
-        env,
-        sessionId,
-        isEncrypted,
-      );
+      return await handleMultipartComplete(request, env, sessionId, isEncrypted);
     }
 
     // Abort multipart upload
@@ -311,35 +291,26 @@ async function handleRequest(
       return await handleMultipartAbort(request, env, sessionId);
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response('Not found', { status: 404 });
   }
 
   // Handle PUT requests for multipart upload parts
-  if (request.method === "PUT") {
-    const partMatch = path.match(
-      /^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/part\/(\d+)$/,
-    );
+  if (request.method === 'PUT') {
+    const partMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/part\/(\d+)$/);
     if (partMatch) {
       const isEncrypted = !!partMatch[1];
       const sessionId = partMatch[2];
       const partNumber = parseInt(partMatch[3], 10);
-      return await handleMultipartPartUpload(
-        request,
-        env,
-        sessionId,
-        partNumber,
-      );
+      return await handleMultipartPartUpload(request, env, sessionId, partNumber);
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response('Not found', { status: 404 });
   }
 
   // Get a paste
-  if (request.method === "GET") {
+  if (request.method === 'GET') {
     // Handle multipart upload status (for resume)
-    const statusMatch = path.match(
-      /^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/status$/,
-    );
+    const statusMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/status$/);
     if (statusMatch) {
       const sessionId = statusMatch[2];
       return await handleMultipartStatus(env, sessionId);
@@ -369,36 +340,36 @@ async function handleRequest(
     }
 
     // Try to serve styles.css directly if [site] configuration doesn't work
-    if (path === "/styles.css") {
+    if (path === '/styles.css') {
       // Serve MUI CSS instead of Tailwind
       const cssContent = getMuiCSS();
 
-      console.log("Serving MUI CSS file");
+      console.log('Serving MUI CSS file');
       return new Response(cssContent, {
         headers: {
-          "Content-Type": "text/css",
-          "Cache-Control": "public, max-age=86400",
+          'Content-Type': 'text/css',
+          'Cache-Control': 'public, max-age=86400',
         },
       });
     }
 
     // Serve the HTML homepage
-    if (path === "/") {
+    if (path === '/') {
       // Track homepage view
       await analytics.trackHomepageView(request);
 
       return new Response(generateHomepage(url.origin), {
         headers: {
-          "Content-Type": "text/html",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'text/html',
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response('Not found', { status: 404 });
   }
 
-  return new Response("Method not allowed", { status: 405 });
+  return new Response('Method not allowed', { status: 405 });
 }
 
 function generateHomepage(origin: string): string {
@@ -701,27 +672,27 @@ async function handleUpload(
   env: Env,
   isOneTime: boolean,
   isEncrypted: boolean,
-  analytics?: WorkerAnalytics,
+  analytics?: WorkerAnalytics
 ): Promise<Response> {
-  const contentType = request.headers.get("Content-Type") || "text/plain";
-  const filename = request.headers.get("X-Filename") || "";
+  const contentType = request.headers.get('Content-Type') || 'text/plain';
+  const filename = request.headers.get('X-Filename') || '';
   const content = await request.arrayBuffer();
 
   // Read expiration and burn-after-reading headers
-  const expireDuration = request.headers.get("X-Expire") || undefined;
-  const burnReadsHeader = request.headers.get("X-Burn-Reads");
+  const expireDuration = request.headers.get('X-Expire') || undefined;
+  const burnReadsHeader = request.headers.get('X-Burn-Reads');
   const burnAfterReads = burnReadsHeader ? parseInt(burnReadsHeader, 10) : undefined;
 
   // Check if the content is empty
   if (content.byteLength === 0) {
-    return new Response("Content cannot be empty", { status: 400 });
+    return new Response('Content cannot be empty', { status: 400 });
   }
 
   // Enforce upload size limit for standard uploads
   if (content.byteLength > MAX_STANDARD_UPLOAD_SIZE) {
     return new Response(
       `Content too large. Maximum size is ${MAX_STANDARD_UPLOAD_SIZE / 1024 / 1024}MB for standard uploads. Use multipart upload for larger files.`,
-      { status: 413 },
+      { status: 413 }
     );
   }
 
@@ -730,7 +701,7 @@ async function handleUpload(
 
   // Ensure encrypted content is always stored with the correct content type
   // This fixes issues with one-time encrypted pastes
-  const adjustedContentType = isEncrypted ? "application/json" : contentType;
+  const adjustedContentType = isEncrypted ? 'application/json' : contentType;
 
   // Compute expiration timestamp if duration specified
   let expiresAt: number | undefined;
@@ -763,7 +734,7 @@ async function handleUpload(
     });
 
     console.log(
-      `Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}, expires=${expiresAt || "never"}`,
+      `Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}, expires=${expiresAt || 'never'}`
     );
   } else {
     // Regular paste - standard storage path
@@ -783,7 +754,9 @@ async function handleUpload(
       customMetadata: metadata as any,
     });
 
-    console.log(`Created regular paste ${id}, isEncrypted=${isEncrypted}, expires=${expiresAt || "never"}`);
+    console.log(
+      `Created regular paste ${id}, isEncrypted=${isEncrypted}, expires=${expiresAt || 'never'}`
+    );
   }
 
   const baseUrl = new URL(request.url).origin;
@@ -796,10 +769,8 @@ async function handleUpload(
       : `${baseUrl}/${id}/${encodedFilename}`;
   } else {
     // For text pastes without filename, add .txt extension
-    const extension = contentType === "text/plain" ? "/paste.txt" : "";
-    pasteUrl = isEncrypted
-      ? `${baseUrl}/e/${id}${extension}`
-      : `${baseUrl}/${id}${extension}`;
+    const extension = contentType === 'text/plain' ? '/paste.txt' : '';
+    pasteUrl = isEncrypted ? `${baseUrl}/e/${id}${extension}` : `${baseUrl}/${id}${extension}`;
   }
 
   // Track paste creation
@@ -814,14 +785,14 @@ async function handleUpload(
 
   // Build response headers
   const responseHeaders: Record<string, string> = {
-    "Access-Control-Allow-Origin": "*",
-    "Content-Type": "text/plain",
+    'Access-Control-Allow-Origin': '*',
+    'Content-Type': 'text/plain',
   };
   if (expiresAt) {
-    responseHeaders["X-Expires-At"] = new Date(expiresAt).toISOString();
+    responseHeaders['X-Expires-At'] = new Date(expiresAt).toISOString();
   }
   if (burnAfterReads) {
-    responseHeaders["X-Burn-Reads"] = burnAfterReads.toString();
+    responseHeaders['X-Burn-Reads'] = burnAfterReads.toString();
   }
 
   // Return the paste URL - we always use the unprefixed ID in the URL
@@ -834,15 +805,15 @@ async function handleGet(
   ctx: ExecutionContext,
   isEncrypted: boolean,
   request: Request,
-  urlFilename?: string | null,
+  urlFilename?: string | null
 ): Promise<Response> {
   // Check for raw parameter to bypass markdown rendering
   const url = new URL(request.url);
-  const wantsRaw = url.searchParams.get("raw") === "true";
+  const wantsRaw = url.searchParams.get('raw') === 'true';
   // First, check if this is a one-time paste by trying to get it with the one-time prefix
   const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
   console.log(
-    `[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`,
+    `[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`
   );
 
   // Add onlyIf condition to bust caches
@@ -853,7 +824,7 @@ async function handleGet(
     // Check if this paste has already been viewed in this instance
     if (oneTimeKey in viewedPastes) {
       console.log(
-        `[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`,
+        `[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`
       );
 
       // Double-check by trying to delete it again, just to be sure
@@ -864,20 +835,19 @@ async function handleGet(
       }
 
       return new Response(
-        "This one-time paste has already been viewed and is no longer available.",
+        'This one-time paste has already been viewed and is no longer available.',
         {
           status: 404,
           headers: {
-            "Content-Type": "text/plain",
-            "Cache-Control":
-              "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-            "Surrogate-Control": "no-store",
-            Pragma: "no-cache",
-            Expires: "0",
-            "X-One-Time": "true",
-            "X-Already-Viewed": "true",
+            'Content-Type': 'text/plain',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+            'Surrogate-Control': 'no-store',
+            Pragma: 'no-cache',
+            Expires: '0',
+            'X-One-Time': 'true',
+            'X-Already-Viewed': 'true',
           },
-        },
+        }
       );
     }
 
@@ -891,44 +861,35 @@ async function handleGet(
     // Store in KV if available (optional enhancement)
     if (env.PASTE_METADATA) {
       try {
-        await env.PASTE_METADATA.put(
-          VIEWED_PASTES_KEY,
-          JSON.stringify(viewedPastes),
-        );
+        await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
       } catch (error) {
         // Non-blocking error - the in-memory tracking still works
         console.log(`[KV] Optional metadata storage unavailable: ${error}`);
       }
     }
-    console.log(
-      `[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`,
-    );
+    console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`);
 
     // Get the content and metadata before we delete the paste
     const content = await oneTimePaste.arrayBuffer();
-    let contentType = "text/plain";
-    let filename = "";
+    let contentType = 'text/plain';
+    let filename = '';
 
     try {
       const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
-      contentType = metadata.contentType || "text/plain";
-      filename = metadata.filename || "";
-      console.log(
-        `[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`,
-      );
+      contentType = metadata.contentType || 'text/plain';
+      filename = metadata.filename || '';
+      console.log(`[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
     } catch (err) {
-      console.error(
-        `[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`,
-      );
+      console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
     }
 
     // Override content type if this is an encrypted paste but the content type doesn't match
     // This ensures proper decryption on the client side
-    if (isEncrypted && contentType !== "application/json") {
+    if (isEncrypted && contentType !== 'application/json') {
       console.log(
-        `[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`,
+        `[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`
       );
-      contentType = "application/json";
+      contentType = 'application/json';
     }
 
     // Delete the paste immediately before returning the content
@@ -936,7 +897,7 @@ async function handleGet(
       // First deletion attempt - force immediate deletion
       await env.PASTE_BUCKET.delete(oneTimeKey);
       console.log(
-        `[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`,
+        `[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`
       );
 
       // Important: Add a small delay to allow propagation in Cloudflare's systems
@@ -945,14 +906,14 @@ async function handleGet(
       // Second deletion attempt to ensure consistency
       await env.PASTE_BUCKET.delete(oneTimeKey);
       console.log(
-        `[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`,
+        `[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`
       );
 
       // Verify the deletion worked
       const verifyDeletion = await env.PASTE_BUCKET.get(oneTimeKey);
       if (verifyDeletion) {
         console.error(
-          `[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`,
+          `[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`
         );
         // Even though deletion appears to have failed, mark it as viewed in our tracking
         // system to prevent subsequent access
@@ -962,10 +923,7 @@ async function handleGet(
         // Store updated tracking in KV if available
         if (env.PASTE_METADATA) {
           try {
-            await env.PASTE_METADATA.put(
-              VIEWED_PASTES_KEY,
-              JSON.stringify(viewedPastes),
-            );
+            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
           } catch (kvError) {
             // Non-blocking - in-memory tracking still works
             console.log(`[KV] Optional metadata update failed: ${kvError}`);
@@ -976,7 +934,7 @@ async function handleGet(
         await env.PASTE_BUCKET.delete(oneTimeKey);
       } else {
         console.log(
-          `[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`,
+          `[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`
         );
         viewedPastes[oneTimeKey].deleted = true;
         viewedPastes[oneTimeKey].attempts++;
@@ -984,21 +942,16 @@ async function handleGet(
         // Store updated tracking in KV
         try {
           if (env.PASTE_METADATA) {
-            await env.PASTE_METADATA.put(
-              VIEWED_PASTES_KEY,
-              JSON.stringify(viewedPastes),
-            );
+            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
           }
         } catch (kvError) {
           console.error(
-            `[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`,
+            `[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`
           );
         }
       }
     } catch (error) {
-      console.error(
-        `[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`,
-      );
+      console.error(`[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`);
 
       // Schedule multiple backup deletion attempts to make sure it gets deleted
       ctx.waitUntil(
@@ -1011,7 +964,7 @@ async function handleGet(
               const delay = 200 * Math.pow(2, i); // 200ms, 400ms, 800ms, 1600ms, 3200ms
               await new Promise((resolve) => setTimeout(resolve, delay));
               console.log(
-                `[TEMP PASTE] Backup deletion attempt ${i + 1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`,
+                `[TEMP PASTE] Backup deletion attempt ${i + 1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`
               );
               await env.PASTE_BUCKET.delete(oneTimeKey);
 
@@ -1019,7 +972,7 @@ async function handleGet(
               const checkResult = await env.PASTE_BUCKET.get(oneTimeKey);
               if (!checkResult) {
                 console.log(
-                  `[TEMP PASTE] Backup deletion attempt ${i + 1} successfully deleted one-time paste ${id}`,
+                  `[TEMP PASTE] Backup deletion attempt ${i + 1} successfully deleted one-time paste ${id}`
                 );
 
                 // Update tracking with success
@@ -1029,15 +982,10 @@ async function handleGet(
                 // Store updated tracking in KV if available
                 if (env.PASTE_METADATA) {
                   try {
-                    await env.PASTE_METADATA.put(
-                      VIEWED_PASTES_KEY,
-                      JSON.stringify(viewedPastes),
-                    );
+                    await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
                   } catch (kvUpdateError) {
                     // Non-blocking - in-memory tracking still works
-                    console.log(
-                      `[KV] Optional metadata backup update failed: ${kvUpdateError}`,
-                    );
+                    console.log(`[KV] Optional metadata backup update failed: ${kvUpdateError}`);
                   }
                 }
 
@@ -1045,72 +993,63 @@ async function handleGet(
               }
             } catch (backupError) {
               console.error(
-                `[TEMP PASTE] Backup deletion attempt ${i + 1} failed for one-time paste ${id}: ${backupError}`,
+                `[TEMP PASTE] Backup deletion attempt ${i + 1} failed for one-time paste ${id}: ${backupError}`
               );
             }
           }
-        })(),
+        })()
       );
     }
 
     // Check if this is markdown content that should be rendered as HTML
     const isMarkdown =
-      contentType === "text/markdown" ||
-      contentType === "text/x-markdown" ||
-      filename.endsWith(".md") ||
-      filename.endsWith(".markdown");
+      contentType === 'text/markdown' ||
+      contentType === 'text/x-markdown' ||
+      filename.endsWith('.md') ||
+      filename.endsWith('.markdown');
 
     if (isMarkdown && !isEncrypted && !wantsRaw) {
       // Convert markdown to HTML for browser viewing
       const textContent = new TextDecoder().decode(content);
-      const renderedHTML = await renderMarkdownAsHTML(
-        textContent,
-        id,
-        filename,
-        true,
-      );
+      const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename, true);
 
       return new Response(renderedHTML, {
         headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Access-Control-Allow-Origin": "*",
-          "Cache-Control":
-            "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-          "CDN-Cache-Control": "no-store",
-          "Surrogate-Control": "no-store",
-          Pragma: "no-cache",
-          Expires: "0",
-          "X-Original-Content-Type": contentType,
-          "X-Rendered-Markdown": "true",
-          "X-One-Time": "true",
-          "X-Paste-Viewed-At": new Date().toISOString(),
+          'Content-Type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'CDN-Cache-Control': 'no-store',
+          'Surrogate-Control': 'no-store',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'X-Original-Content-Type': contentType,
+          'X-Rendered-Markdown': 'true',
+          'X-One-Time': 'true',
+          'X-Paste-Viewed-At': new Date().toISOString(),
         },
       });
     }
 
     // Determine if content should be displayed inline or downloaded
     const isViewableInBrowser = isViewableContentType(contentType);
-    const disposition = isViewableInBrowser ? "inline" : "attachment";
+    const disposition = isViewableInBrowser ? 'inline' : 'attachment';
     const effectiveFilename =
-      urlFilename ||
-      filename ||
-      `${id}${getExtensionForContentType(contentType)}`;
+      urlFilename || filename || `${id}${getExtensionForContentType(contentType)}`;
 
     // Return the content with stronger cache control headers
     return new Response(content, {
       headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-        "CDN-Cache-Control": "no-store", // Additional CDN-specific directive
-        "Surrogate-Control": "no-store", // For Cloudflare and other CDNs
-        Pragma: "no-cache",
-        Expires: "0",
-        "X-Encrypted": isEncrypted ? "true" : "false",
-        "X-One-Time": "true", // Mark as one-time paste explicitly
-        "X-Paste-Viewed-At": new Date().toISOString(), // Add timestamp of viewing
+        'Content-Type': contentType,
+        'Content-Disposition': `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'CDN-Cache-Control': 'no-store', // Additional CDN-specific directive
+        'Surrogate-Control': 'no-store', // For Cloudflare and other CDNs
+        Pragma: 'no-cache',
+        Expires: '0',
+        'X-Encrypted': isEncrypted ? 'true' : 'false',
+        'X-One-Time': 'true', // Mark as one-time paste explicitly
+        'X-Paste-Viewed-At': new Date().toISOString(), // Add timestamp of viewing
       },
     });
   }
@@ -1120,19 +1059,19 @@ async function handleGet(
   const paste = await env.PASTE_BUCKET.get(id);
 
   if (!paste) {
-    return new Response("Paste not found", { status: 404 });
+    return new Response('Paste not found', { status: 404 });
   }
 
   // Regular paste - get metadata (available without reading the body)
-  let contentType = "text/plain";
-  let filename = "";
+  let contentType = 'text/plain';
+  let filename = '';
 
   try {
     const metadata = paste.customMetadata as unknown as PasteMetadata;
-    contentType = metadata.contentType || "text/plain";
-    filename = metadata.filename || "";
+    contentType = metadata.contentType || 'text/plain';
+    filename = metadata.filename || '';
     console.log(
-      `[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`,
+      `[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`
     );
   } catch (err) {
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
@@ -1140,25 +1079,23 @@ async function handleGet(
 
   // Use URL filename if provided, otherwise use stored filename
   const effectiveFilename =
-    urlFilename ||
-    filename ||
-    `${id}${getExtensionForContentType(contentType)}`;
+    urlFilename || filename || `${id}${getExtensionForContentType(contentType)}`;
 
   // Override content type if this is an encrypted paste but the content type doesn't match
   // This ensures proper decryption on the client side
-  if (isEncrypted && contentType !== "application/json") {
+  if (isEncrypted && contentType !== 'application/json') {
     console.log(
-      `[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`,
+      `[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`
     );
-    contentType = "application/json";
+    contentType = 'application/json';
   }
 
   // Check if this is markdown content that should be rendered as HTML
   const isMarkdown =
-    contentType === "text/markdown" ||
-    contentType === "text/x-markdown" ||
-    filename.endsWith(".md") ||
-    filename.endsWith(".markdown");
+    contentType === 'text/markdown' ||
+    contentType === 'text/x-markdown' ||
+    filename.endsWith('.md') ||
+    filename.endsWith('.markdown');
 
   if (isMarkdown && !isEncrypted && !wantsRaw) {
     // Markdown rendering requires buffering the content into memory
@@ -1168,35 +1105,34 @@ async function handleGet(
 
     return new Response(renderedHTML, {
       headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate, proxy-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        "X-Original-Content-Type": contentType,
-        "X-Rendered-Markdown": "true",
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+        'X-Original-Content-Type': contentType,
+        'X-Rendered-Markdown': 'true',
       },
     });
   }
 
   // Determine if content should be displayed inline or downloaded
   const isViewableInBrowser = isViewableContentType(contentType);
-  const disposition = isViewableInBrowser ? "inline" : "attachment";
+  const disposition = isViewableInBrowser ? 'inline' : 'attachment';
 
   // Stream the R2 object body directly to avoid buffering large files in memory.
   // This is critical for multipart-uploaded files which can be up to 5GB.
   return new Response(paste.body, {
     headers: {
-      "Content-Type": contentType,
-      "Content-Disposition": `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
-      "Content-Length": paste.size.toString(),
-      "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      Pragma: "no-cache",
-      Expires: "0",
+      'Content-Type': contentType,
+      'Content-Disposition': `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
+      'Content-Length': paste.size.toString(),
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
       // Add a header to indicate if the paste is encrypted
-      "X-Encrypted": isEncrypted ? "true" : "false",
+      'X-Encrypted': isEncrypted ? 'true' : 'false',
     },
   });
 }
@@ -1206,14 +1142,14 @@ async function handleGet(
  */
 function isViewableContentType(contentType: string): boolean {
   const viewableTypes = [
-    "text/",
-    "image/",
-    "audio/",
-    "video/",
-    "application/pdf",
-    "application/json",
-    "application/xml",
-    "application/javascript",
+    'text/',
+    'image/',
+    'audio/',
+    'video/',
+    'application/pdf',
+    'application/json',
+    'application/xml',
+    'application/javascript',
   ];
 
   return viewableTypes.some((type) => contentType.startsWith(type));
@@ -1224,37 +1160,37 @@ function isViewableContentType(contentType: string): boolean {
  */
 function getExtensionForContentType(contentType: string): string {
   const extensionMap: { [key: string]: string } = {
-    "text/plain": ".txt",
-    "text/html": ".html",
-    "text/css": ".css",
-    "text/javascript": ".js",
-    "text/markdown": ".md",
-    "text/x-markdown": ".md",
-    "application/json": ".json",
-    "application/xml": ".xml",
-    "application/pdf": ".pdf",
-    "application/zip": ".zip",
-    "application/x-zip-compressed": ".zip",
-    "application/gzip": ".gz",
-    "application/x-tar": ".tar",
-    "application/x-7z-compressed": ".7z",
-    "application/x-rar-compressed": ".rar",
-    "application/octet-stream": ".bin",
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/svg+xml": ".svg",
-    "image/webp": ".webp",
-    "video/mp4": ".mp4",
-    "video/webm": ".webm",
-    "video/ogg": ".ogv",
-    "audio/mpeg": ".mp3",
-    "audio/ogg": ".ogg",
-    "audio/wav": ".wav",
-    "audio/webm": ".weba",
+    'text/plain': '.txt',
+    'text/html': '.html',
+    'text/css': '.css',
+    'text/javascript': '.js',
+    'text/markdown': '.md',
+    'text/x-markdown': '.md',
+    'application/json': '.json',
+    'application/xml': '.xml',
+    'application/pdf': '.pdf',
+    'application/zip': '.zip',
+    'application/x-zip-compressed': '.zip',
+    'application/gzip': '.gz',
+    'application/x-tar': '.tar',
+    'application/x-7z-compressed': '.7z',
+    'application/x-rar-compressed': '.rar',
+    'application/octet-stream': '.bin',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/svg+xml': '.svg',
+    'image/webp': '.webp',
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/ogg': '.ogv',
+    'audio/mpeg': '.mp3',
+    'audio/ogg': '.ogg',
+    'audio/wav': '.wav',
+    'audio/webm': '.weba',
   };
 
-  return extensionMap[contentType] || "";
+  return extensionMap[contentType] || '';
 }
 
 /**
@@ -1268,8 +1204,8 @@ function getExtensionForContentType(contentType: string): string {
 async function renderMarkdownAsHTML(
   markdownContent: string,
   pasteId: string,
-  filename: string = "",
-  isOneTime: boolean = false,
+  filename: string = '',
+  isOneTime: boolean = false
 ): Promise<string> {
   // Create a custom renderer for marked
   const renderer = new marked.Renderer();
@@ -1292,7 +1228,7 @@ async function renderMarkdownAsHTML(
     const blockId = `code-block-${++codeBlockId}`;
 
     // Check if this is a mermaid diagram
-    if (lang === "mermaid") {
+    if (lang === 'mermaid') {
       hasMermaidDiagrams = true;
       const mermaidId = `mermaid-${++mermaidBlockId}`;
 
@@ -1330,7 +1266,7 @@ async function renderMarkdownAsHTML(
 
     // Regular code block handling
     let highlighted: string;
-    let detectedLanguage = lang || "plaintext";
+    let detectedLanguage = lang || 'plaintext';
 
     try {
       if (lang && hljs.getLanguage(lang)) {
@@ -1340,12 +1276,12 @@ async function renderMarkdownAsHTML(
         // Auto-detect language
         const result = hljs.highlightAuto(text);
         highlighted = result.value;
-        detectedLanguage = result.language || "plaintext";
+        detectedLanguage = result.language || 'plaintext';
       }
     } catch (err) {
       // Fallback to plain text if highlighting fails
       highlighted = escapeHtml(text);
-      detectedLanguage = "plaintext";
+      detectedLanguage = 'plaintext';
     }
 
     // Return the highlighted code with a wrapper for the copy button
@@ -1376,10 +1312,10 @@ async function renderMarkdownAsHTML(
   const htmlContent = sanitizeHtml(rawHtmlContent);
 
   // Generate a title from the filename or first heading
-  let title = filename || "Markdown Document";
-  if (title.endsWith(".md")) {
+  let title = filename || 'Markdown Document';
+  if (title.endsWith('.md')) {
     title = title.slice(0, -3);
-  } else if (title.endsWith(".markdown")) {
+  } else if (title.endsWith('.markdown')) {
     title = title.slice(0, -9);
   }
 
@@ -1920,9 +1856,9 @@ async function renderMarkdownAsHTML(
       <span class="brand">Ded</span>Paste - Markdown Viewer
     </div>
     <div class="paste-info">
-      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ""}
+      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ''}
       <span class="paste-id">ID: ${escapeHtml(pasteId)}</span>
-      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ""}
+      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ''}
     </div>
   </header>
   
@@ -2231,11 +2167,11 @@ async function renderMarkdownAsHTML(
  */
 function escapeHtml(unsafe: string): string {
   return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 /**
@@ -2245,53 +2181,44 @@ function escapeHtml(unsafe: string): string {
  */
 function sanitizeHtml(html: string): string {
   // Remove dangerous tags entirely (including content for script/style)
-  html = html.replace(
-    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-    "",
-  );
-  html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+  html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+  html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
 
   // Remove dangerous self-closing/void tags
   const dangerousTags = [
-    "iframe",
-    "object",
-    "embed",
-    "applet",
-    "form",
-    "input",
-    "textarea",
-    "select",
-    "button",
-    "link",
-    "meta",
-    "base",
+    'iframe',
+    'object',
+    'embed',
+    'applet',
+    'form',
+    'input',
+    'textarea',
+    'select',
+    'button',
+    'link',
+    'meta',
+    'base',
   ];
   for (const tag of dangerousTags) {
-    const openClose = new RegExp(
-      `<${tag}\\b[^<]*(?:(?!<\\/${tag}>)<[^<]*)*<\\/${tag}>`,
-      "gi",
-    );
-    html = html.replace(openClose, "");
-    const selfClose = new RegExp(`<${tag}\\b[^>]*\\/?>`, "gi");
-    html = html.replace(selfClose, "");
+    const openClose = new RegExp(`<${tag}\\b[^<]*(?:(?!<\\/${tag}>)<[^<]*)*<\\/${tag}>`, 'gi');
+    html = html.replace(openClose, '');
+    const selfClose = new RegExp(`<${tag}\\b[^>]*\\/?>`, 'gi');
+    html = html.replace(selfClose, '');
   }
 
   // Remove event handler attributes (on*)
-  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
 
   // Remove javascript: and vbscript: URLs in href/src/action attributes
   html = html.replace(
     /(href|src|action)\s*=\s*(?:"[^"]*javascript:[^"]*"|'[^']*javascript:[^']*')/gi,
-    '$1=""',
+    '$1=""'
   );
   html = html.replace(
     /(href|src|action)\s*=\s*(?:"[^"]*vbscript:[^"]*"|'[^']*vbscript:[^']*')/gi,
-    '$1=""',
+    '$1=""'
   );
-  html = html.replace(
-    /(href|src|action)\s*=\s*(?:"[^"]*data:[^"]*"|'[^']*data:[^']*')/gi,
-    '$1=""',
-  );
+  html = html.replace(/(href|src|action)\s*=\s*(?:"[^"]*data:[^"]*"|'[^']*data:[^']*')/gi, '$1=""');
 
   return html;
 }
@@ -2301,9 +2228,7 @@ function sanitizeHtml(html: string): string {
  * Escapes </script> and <!-- sequences that could break out of the script context.
  */
 function safeJsonEmbed(value: string): string {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e");
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 }
 
 /**
@@ -2313,9 +2238,9 @@ function safeJsonEmbed(value: string): string {
 function sanitizeFilename(filename: string): string {
   // Remove path traversal, quotes, control characters, and newlines
   return filename
-    .replace(/["\\\r\n]/g, "_")
-    .replace(/\.\.\//g, "")
-    .replace(/[^\x20-\x7E]/g, "_");
+    .replace(/["\\\r\n]/g, '_')
+    .replace(/\.\.\//g, '')
+    .replace(/[^\x20-\x7E]/g, '_');
 }
 
 /**
@@ -2328,15 +2253,15 @@ function sanitizeFilename(filename: string): string {
 async function handleWebUpload(request: Request, env: Env): Promise<Response> {
   try {
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const oneTime = formData.get("oneTime") === "true";
+    const file = formData.get('file') as File;
+    const oneTime = formData.get('oneTime') === 'true';
 
     if (!file) {
-      return new Response(JSON.stringify({ error: "No file provided" }), {
+      return new Response(JSON.stringify({ error: 'No file provided' }), {
         status: 400,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
@@ -2352,10 +2277,10 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
         {
           status: 413,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": getCorsOrigin(request),
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': getCorsOrigin(request),
           },
-        },
+        }
       );
     }
 
@@ -2363,7 +2288,7 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
     const key = oneTime ? `${ONE_TIME_PREFIX}${id}` : id;
 
     const metadata: PasteMetadata = {
-      contentType: file.type || "application/octet-stream",
+      contentType: file.type || 'application/octet-stream',
       isOneTime: oneTime,
       createdAt: Date.now(),
       filename: file.name,
@@ -2378,16 +2303,16 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ url, id }), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: "Upload failed" }), {
+    return new Response(JSON.stringify({ error: 'Upload failed' }), {
       status: 500,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }
@@ -2405,11 +2330,11 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     const { content, oneTime } = body;
 
     if (!content) {
-      return new Response(JSON.stringify({ error: "No content provided" }), {
+      return new Response(JSON.stringify({ error: 'No content provided' }), {
         status: 400,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': getCorsOrigin(request),
         },
       });
     }
@@ -2424,10 +2349,10 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
         {
           status: 413,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": getCorsOrigin(request),
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': getCorsOrigin(request),
           },
-        },
+        }
       );
     }
 
@@ -2435,10 +2360,10 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     const key = oneTime ? `${ONE_TIME_PREFIX}${id}` : id;
 
     const metadata: PasteMetadata = {
-      contentType: "text/plain",
+      contentType: 'text/plain',
       isOneTime: oneTime,
       createdAt: Date.now(),
-      filename: "paste.txt",
+      filename: 'paste.txt',
     };
 
     await env.PASTE_BUCKET.put(key, content, {
@@ -2450,16 +2375,16 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ url, id }), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: "Upload failed" }), {
+    return new Response(JSON.stringify({ error: 'Upload failed' }), {
       status: 500,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }
@@ -2472,7 +2397,7 @@ async function handleWebDecrypt(
   id: string,
   env: Env,
   ctx: ExecutionContext,
-  request: Request,
+  request: Request
 ): Promise<Response> {
   // For now, just redirect to the regular GET handler
   // In the future, this would handle decryption with provided keys
@@ -2495,10 +2420,7 @@ function generateSessionId(): string {
 /**
  * Get upload session from KV storage.
  */
-async function getUploadSession(
-  env: Env,
-  sessionId: string,
-): Promise<UploadSession | null> {
+async function getUploadSession(env: Env, sessionId: string): Promise<UploadSession | null> {
   if (!env.UPLOAD_SESSIONS) {
     return null;
   }
@@ -2515,16 +2437,13 @@ async function getUploadSession(
 async function saveUploadSession(
   env: Env,
   sessionId: string,
-  session: UploadSession,
+  session: UploadSession
 ): Promise<void> {
   if (!env.UPLOAD_SESSIONS) {
-    throw new Error("UPLOAD_SESSIONS KV namespace not configured");
+    throw new Error('UPLOAD_SESSIONS KV namespace not configured');
   }
   // Set TTL to session expiration time
-  const ttlSeconds = Math.max(
-    60,
-    Math.floor((session.expiresAt - Date.now()) / 1000),
-  );
+  const ttlSeconds = Math.max(60, Math.floor((session.expiresAt - Date.now()) / 1000));
   await env.UPLOAD_SESSIONS.put(sessionId, JSON.stringify(session), {
     expirationTtl: ttlSeconds,
   });
@@ -2546,22 +2465,21 @@ async function deleteUploadSession(env: Env, sessionId: string): Promise<void> {
 async function handleMultipartInit(
   request: Request,
   env: Env,
-  isEncrypted: boolean,
+  isEncrypted: boolean
 ): Promise<Response> {
   // Check if UPLOAD_SESSIONS is configured
   if (!env.UPLOAD_SESSIONS) {
     return new Response(
       JSON.stringify({
-        error:
-          "Large file uploads not configured. UPLOAD_SESSIONS KV namespace required.",
+        error: 'Large file uploads not configured. UPLOAD_SESSIONS KV namespace required.',
       }),
       {
         status: 503,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      },
+      }
     );
   }
 
@@ -2580,16 +2498,15 @@ async function handleMultipartInit(
     if (!filename || !contentType || !totalSize || !totalParts) {
       return new Response(
         JSON.stringify({
-          error:
-            "Missing required fields: filename, contentType, totalSize, totalParts",
+          error: 'Missing required fields: filename, contentType, totalSize, totalParts',
         }),
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -2602,10 +2519,10 @@ async function handleMultipartInit(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -2616,11 +2533,11 @@ async function handleMultipartInit(
     // Create multipart upload in R2
     const multipartUpload = await env.PASTE_BUCKET.createMultipartUpload(key, {
       customMetadata: {
-        contentType: isEncrypted ? "application/json" : contentType,
+        contentType: isEncrypted ? 'application/json' : contentType,
         isOneTime: String(isOneTime),
         createdAt: String(Date.now()),
         filename: filename,
-        isMultipart: "true",
+        isMultipart: 'true',
       },
     });
 
@@ -2632,7 +2549,7 @@ async function handleMultipartInit(
       uploadId: multipartUpload.uploadId,
       key,
       filename,
-      contentType: isEncrypted ? "application/json" : contentType,
+      contentType: isEncrypted ? 'application/json' : contentType,
       totalSize,
       totalParts,
       uploadedParts: [],
@@ -2648,7 +2565,7 @@ async function handleMultipartInit(
 
     console.log(
       `[MULTIPART] Initialized upload session ${sessionId} for paste ${pasteId}, ` +
-        `size=${totalSize}, parts=${totalParts}, encrypted=${isEncrypted}, oneTime=${isOneTime}`,
+        `size=${totalSize}, parts=${totalParts}, encrypted=${isEncrypted}, oneTime=${isOneTime}`
     );
 
     const response: MultipartInitResponse = {
@@ -2661,22 +2578,19 @@ async function handleMultipartInit(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    console.error("[MULTIPART] Init error:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to initialize multipart upload" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    console.error('[MULTIPART] Init error:', error);
+    return new Response(JSON.stringify({ error: 'Failed to initialize multipart upload' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
 
@@ -2688,37 +2602,31 @@ async function handleMultipartPartUpload(
   request: Request,
   env: Env,
   sessionId: string,
-  partNumber: number,
+  partNumber: number
 ): Promise<Response> {
   try {
     // Get session
     const session = await getUploadSession(env, sessionId);
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: "Upload session not found or expired" }),
-        {
-          status: 404,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+      return new Response(JSON.stringify({ error: 'Upload session not found or expired' }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      );
+      });
     }
 
     // Check if session has expired
     if (Date.now() > session.expiresAt) {
       await deleteUploadSession(env, sessionId);
-      return new Response(
-        JSON.stringify({ error: "Upload session has expired" }),
-        {
-          status: 410,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+      return new Response(JSON.stringify({ error: 'Upload session has expired' }), {
+        status: 410,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      );
+      });
     }
 
     // Validate part number
@@ -2730,17 +2638,15 @@ async function handleMultipartPartUpload(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     // Check if part already uploaded
-    const existingPart = session.uploadedParts.find(
-      (p) => p.partNumber === partNumber,
-    );
+    const existingPart = session.uploadedParts.find((p) => p.partNumber === partNumber);
     if (existingPart) {
       // Return existing etag (idempotent)
       const response: PartUploadResponse = {
@@ -2750,29 +2656,20 @@ async function handleMultipartPartUpload(
       return new Response(JSON.stringify(response), {
         status: 200,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
 
     // Resume multipart upload in R2
-    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
-      session.key,
-      session.uploadId,
-    );
+    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(session.key, session.uploadId);
 
     // Get content length
-    const contentLength = parseInt(
-      request.headers.get("Content-Length") || "0",
-      10,
-    );
+    const contentLength = parseInt(request.headers.get('Content-Length') || '0', 10);
 
     // Validate minimum part size (except for last part)
-    if (
-      partNumber < session.totalParts &&
-      contentLength < LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE
-    ) {
+    if (partNumber < session.totalParts && contentLength < LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE) {
       return new Response(
         JSON.stringify({
           error: `Part size too small. Minimum is ${LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE / (1024 * 1024)}MB (except for last part)`,
@@ -2780,17 +2677,17 @@ async function handleMultipartPartUpload(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     // Upload the part - stream the request body directly to R2
     const uploadedPart = await multipartUpload.uploadPart(
       partNumber,
-      request.body as ReadableStream,
+      request.body as ReadableStream
     );
 
     // Update session with uploaded part
@@ -2808,7 +2705,7 @@ async function handleMultipartPartUpload(
 
     console.log(
       `[MULTIPART] Uploaded part ${partNumber}/${session.totalParts} for session ${sessionId}, ` +
-        `size=${contentLength}, etag=${uploadedPart.etag}`,
+        `size=${contentLength}, etag=${uploadedPart.etag}`
     );
 
     const response: PartUploadResponse = {
@@ -2819,20 +2716,17 @@ async function handleMultipartPartUpload(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    console.error(
-      `[MULTIPART] Part upload error for session ${sessionId}:`,
-      error,
-    );
-    return new Response(JSON.stringify({ error: "Failed to upload part" }), {
+    console.error(`[MULTIPART] Part upload error for session ${sessionId}:`, error);
+    return new Response(JSON.stringify({ error: 'Failed to upload part' }), {
       status: 500,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }
@@ -2846,22 +2740,19 @@ async function handleMultipartComplete(
   request: Request,
   env: Env,
   sessionId: string,
-  isEncrypted: boolean,
+  isEncrypted: boolean
 ): Promise<Response> {
   try {
     // Get session
     const session = await getUploadSession(env, sessionId);
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: "Upload session not found or expired" }),
-        {
-          status: 404,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+      return new Response(JSON.stringify({ error: 'Upload session not found or expired' }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      );
+      });
     }
 
     // Parse request body
@@ -2877,18 +2768,15 @@ async function handleMultipartComplete(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     // Resume multipart upload in R2
-    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
-      session.key,
-      session.uploadId,
-    );
+    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(session.key, session.uploadId);
 
     // Complete the upload
     // Parts must be sorted by part number
@@ -2921,7 +2809,7 @@ async function handleMultipartComplete(
 
     console.log(
       `[MULTIPART] Completed upload for session ${sessionId}, paste=${pasteId}, ` +
-        `totalSize=${totalSize}, encrypted=${isEncrypted}`,
+        `totalSize=${totalSize}, encrypted=${isEncrypted}`
     );
 
     const response: MultipartCompleteResponse = {
@@ -2933,25 +2821,19 @@ async function handleMultipartComplete(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    console.error(
-      `[MULTIPART] Complete error for session ${sessionId}:`,
-      error,
-    );
-    return new Response(
-      JSON.stringify({ error: "Failed to complete multipart upload" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    console.error(`[MULTIPART] Complete error for session ${sessionId}:`, error);
+    return new Response(JSON.stringify({ error: 'Failed to complete multipart upload' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
 
@@ -2962,7 +2844,7 @@ async function handleMultipartComplete(
 async function handleMultipartAbort(
   request: Request,
   env: Env,
-  sessionId: string,
+  sessionId: string
 ): Promise<Response> {
   try {
     // Get session
@@ -2972,31 +2854,25 @@ async function handleMultipartAbort(
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Session not found or already cleaned up",
+          message: 'Session not found or already cleaned up',
         }),
         {
           status: 200,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     try {
       // Resume and abort the R2 multipart upload
-      const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
-        session.key,
-        session.uploadId,
-      );
+      const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(session.key, session.uploadId);
       await multipartUpload.abort();
     } catch (e) {
       // Ignore abort errors - upload may already be completed or aborted
-      console.log(
-        `[MULTIPART] Abort R2 upload warning for session ${sessionId}:`,
-        e,
-      );
+      console.log(`[MULTIPART] Abort R2 upload warning for session ${sessionId}:`, e);
     }
 
     // Delete session from KV
@@ -3007,28 +2883,25 @@ async function handleMultipartAbort(
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Upload session aborted and cleaned up",
+        message: 'Upload session aborted and cleaned up',
       }),
       {
         status: 200,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      },
+      }
     );
   } catch (error) {
     console.error(`[MULTIPART] Abort error for session ${sessionId}:`, error);
-    return new Response(
-      JSON.stringify({ error: "Failed to abort multipart upload" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    return new Response(JSON.stringify({ error: 'Failed to abort multipart upload' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
 
@@ -3036,26 +2909,23 @@ async function handleMultipartAbort(
  * Get upload session status (for resume support).
  * GET /upload/:sessionId/status or GET /e/upload/:sessionId/status
  */
-async function handleMultipartStatus(
-  env: Env,
-  sessionId: string,
-): Promise<Response> {
+async function handleMultipartStatus(env: Env, sessionId: string): Promise<Response> {
   try {
     // Get session
     const session = await getUploadSession(env, sessionId);
     if (!session) {
       return new Response(
         JSON.stringify({
-          error: "Upload session not found or expired",
+          error: 'Upload session not found or expired',
           isValid: false,
         }),
         {
           status: 404,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -3065,16 +2935,16 @@ async function handleMultipartStatus(
       await deleteUploadSession(env, sessionId);
       return new Response(
         JSON.stringify({
-          error: "Upload session has expired",
+          error: 'Upload session has expired',
           isValid: false,
         }),
         {
           status: 410,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -3084,10 +2954,7 @@ async function handleMultipartStatus(
       : session.key;
 
     // Calculate uploaded bytes
-    const uploadedBytes = session.uploadedParts.reduce(
-      (sum, p) => sum + p.size,
-      0,
-    );
+    const uploadedBytes = session.uploadedParts.reduce((sum, p) => sum + p.size, 0);
 
     const response: UploadStatusResponse = {
       sessionId,
@@ -3103,21 +2970,18 @@ async function handleMultipartStatus(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
     console.error(`[MULTIPART] Status error for session ${sessionId}:`, error);
-    return new Response(
-      JSON.stringify({ error: "Failed to get upload status", isValid: false }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    return new Response(JSON.stringify({ error: 'Failed to get upload status', isValid: false }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
