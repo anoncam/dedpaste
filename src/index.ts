@@ -1,49 +1,58 @@
-import { marked } from "marked";
-import hljs from "highlight.js/lib/core";
+import { marked } from 'marked';
+import hljs from 'highlight.js/lib/core';
 // Import only the languages we want to support to keep bundle size down
-import javascript from "highlight.js/lib/languages/javascript";
-import typescript from "highlight.js/lib/languages/typescript";
-import python from "highlight.js/lib/languages/python";
-import json from "highlight.js/lib/languages/json";
-import xml from "highlight.js/lib/languages/xml"; // HTML, XML
-import css from "highlight.js/lib/languages/css";
-import markdown from "highlight.js/lib/languages/markdown";
-import bash from "highlight.js/lib/languages/bash";
-import yaml from "highlight.js/lib/languages/yaml";
-import sql from "highlight.js/lib/languages/sql";
-import java from "highlight.js/lib/languages/java";
-import cpp from "highlight.js/lib/languages/cpp";
-import go from "highlight.js/lib/languages/go";
-import rust from "highlight.js/lib/languages/rust";
-import ruby from "highlight.js/lib/languages/ruby";
-import php from "highlight.js/lib/languages/php";
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import json from 'highlight.js/lib/languages/json';
+import xml from 'highlight.js/lib/languages/xml'; // HTML, XML
+import css from 'highlight.js/lib/languages/css';
+import markdown from 'highlight.js/lib/languages/markdown';
+import bash from 'highlight.js/lib/languages/bash';
+import yaml from 'highlight.js/lib/languages/yaml';
+import sql from 'highlight.js/lib/languages/sql';
+import java from 'highlight.js/lib/languages/java';
+import cpp from 'highlight.js/lib/languages/cpp';
+import go from 'highlight.js/lib/languages/go';
+import rust from 'highlight.js/lib/languages/rust';
+import ruby from 'highlight.js/lib/languages/ruby';
+import php from 'highlight.js/lib/languages/php';
 
 // Import MUI styles
-import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from "./muiStyles";
+import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from './muiStyles';
+
+// Import browser viewer templates
+import {
+  renderTextViewerPage,
+  renderEncryptedLandingPage,
+  renderOneTimeInterstitialPage,
+  renderErrorPage,
+  getHljsThemeStyles,
+} from './viewerTemplates';
 
 // Import analytics
-import { createAnalytics, WorkerAnalytics } from "./analytics";
+import { createAnalytics, WorkerAnalytics } from './analytics';
 
 // Register languages with highlight.js
-hljs.registerLanguage("javascript", javascript);
-hljs.registerLanguage("typescript", typescript);
-hljs.registerLanguage("python", python);
-hljs.registerLanguage("json", json);
-hljs.registerLanguage("xml", xml);
-hljs.registerLanguage("html", xml); // HTML is handled by XML
-hljs.registerLanguage("css", css);
-hljs.registerLanguage("markdown", markdown);
-hljs.registerLanguage("bash", bash);
-hljs.registerLanguage("sh", bash); // Shell alias
-hljs.registerLanguage("yaml", yaml);
-hljs.registerLanguage("sql", sql);
-hljs.registerLanguage("java", java);
-hljs.registerLanguage("cpp", cpp);
-hljs.registerLanguage("c++", cpp); // C++ alias
-hljs.registerLanguage("go", go);
-hljs.registerLanguage("rust", rust);
-hljs.registerLanguage("ruby", ruby);
-hljs.registerLanguage("php", php);
+hljs.registerLanguage('javascript', javascript);
+hljs.registerLanguage('typescript', typescript);
+hljs.registerLanguage('python', python);
+hljs.registerLanguage('json', json);
+hljs.registerLanguage('xml', xml);
+hljs.registerLanguage('html', xml); // HTML is handled by XML
+hljs.registerLanguage('css', css);
+hljs.registerLanguage('markdown', markdown);
+hljs.registerLanguage('bash', bash);
+hljs.registerLanguage('sh', bash); // Shell alias
+hljs.registerLanguage('yaml', yaml);
+hljs.registerLanguage('sql', sql);
+hljs.registerLanguage('java', java);
+hljs.registerLanguage('cpp', cpp);
+hljs.registerLanguage('c++', cpp); // C++ alias
+hljs.registerLanguage('go', go);
+hljs.registerLanguage('rust', rust);
+hljs.registerLanguage('ruby', ruby);
+hljs.registerLanguage('php', php);
 
 // Import multipart upload types
 import type {
@@ -55,11 +64,11 @@ import type {
   MultipartCompleteRequest,
   MultipartCompleteResponse,
   UploadStatusResponse,
-} from "./types";
-import { LARGE_FILE_CONSTANTS } from "./types";
+} from './types';
+import { LARGE_FILE_CONSTANTS } from './types';
 
 // Import service layer
-import { createServices, parseDuration } from "./services";
+import { createServices, parseDuration } from './services';
 
 // Import validation
 import {
@@ -67,10 +76,10 @@ import {
   validateWebUpload,
   checkValidation,
   parseJsonBody,
-} from "./validation";
+} from './validation';
 
 // Import API v1 router
-import { routeApiV1 } from "./api/v1";
+import { routeApiV1 } from './api/v1';
 
 // Define the environment interface for Cloudflare Workers
 type Env = {
@@ -94,33 +103,239 @@ type PasteMetadata = {
 
 // For one-time pastes, we'll use a completely different key format
 // with a prefix to make identifying them clear
-const ONE_TIME_PREFIX = "onetime-";
+const ONE_TIME_PREFIX = 'onetime-';
 
 // Maximum upload size for standard (non-multipart) uploads: 25MB
 const MAX_STANDARD_UPLOAD_SIZE = 25 * 1024 * 1024;
 
+// Pastes larger than this skip server-side syntax highlighting (escaped <pre> only)
+const VIEWER_HIGHLIGHT_MAX_SIZE = 500 * 1024;
+
+// Pastes larger than this skip the HTML viewer entirely and stream raw bytes
+// (kept small because the viewer must buffer the full body in Worker memory)
+const VIEWER_MAX_SIZE = 1024 * 1024;
+
+// Map of filename extensions to registered highlight.js language names
+const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  py: 'python',
+  json: 'json',
+  xml: 'xml',
+  html: 'html',
+  htm: 'html',
+  svg: 'xml',
+  css: 'css',
+  md: 'markdown',
+  markdown: 'markdown',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  yml: 'yaml',
+  yaml: 'yaml',
+  sql: 'sql',
+  java: 'java',
+  c: 'cpp',
+  h: 'cpp',
+  cc: 'cpp',
+  cpp: 'cpp',
+  cxx: 'cpp',
+  hpp: 'cpp',
+  go: 'go',
+  rs: 'rust',
+  rb: 'ruby',
+  php: 'php',
+};
+
+// Map of content types to registered highlight.js language names
+const CONTENT_TYPE_LANGUAGE_MAP: Record<string, string> = {
+  'application/json': 'json',
+  'application/javascript': 'javascript',
+  'application/xml': 'xml',
+  'text/javascript': 'javascript',
+  'text/html': 'html',
+  'text/css': 'css',
+  'text/xml': 'xml',
+  'text/x-python': 'python',
+  'text/x-shellscript': 'bash',
+  'text/yaml': 'yaml',
+  'text/x-yaml': 'yaml',
+};
+
+/**
+ * Normalizes a string read from R2 custom metadata. Undefined values can be
+ * stringified to "undefined" on write, so treat those as empty.
+ */
+function cleanMetadataString(value: string | undefined): string {
+  if (!value || value === 'undefined' || value === 'null') {
+    return '';
+  }
+  return value;
+}
+
+/**
+ * Strips undefined values from a metadata object so they are not stringified
+ * to the literal "undefined" when stored as R2 custom metadata.
+ */
+function toCustomMetadata(metadata: PasteMetadata): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value !== undefined && value !== null) {
+      result[key] = String(value);
+    }
+  }
+  return result;
+}
+
+/**
+ * Determines whether the client is a browser expecting an HTML page.
+ * Browsers send Accept headers containing "text/html"; curl and node fetch
+ * default to "*\/*", so CLI/programmatic clients keep receiving raw content.
+ */
+function requestAcceptsHtml(request: Request): boolean {
+  return (request.headers.get('Accept') || '').includes('text/html');
+}
+
+/**
+ * Determines whether a content type is text-like and eligible for the
+ * universal browser text viewer.
+ */
+function isTextualContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase().split(';')[0].trim();
+  return (
+    ct.startsWith('text/') ||
+    ct === 'application/json' ||
+    ct === 'application/xml' ||
+    ct === 'application/javascript'
+  );
+}
+
+/**
+ * Picks a highlight.js language for a paste based on its filename extension,
+ * falling back to its content type. Returns null when unknown (auto-detect).
+ */
+function detectViewerLanguage(filename: string, contentType: string): string | null {
+  const extMatch = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (extMatch && EXTENSION_LANGUAGE_MAP[extMatch[1]]) {
+    return EXTENSION_LANGUAGE_MAP[extMatch[1]];
+  }
+  const ct = contentType.toLowerCase().split(';')[0].trim();
+  return CONTENT_TYPE_LANGUAGE_MAP[ct] || null;
+}
+
+/**
+ * Builds the universal text viewer HTML for a text-like paste, applying
+ * server-side syntax highlighting with safe fallbacks.
+ * @param textContent Decoded paste text
+ * @param pasteId Paste ID
+ * @param filename Filename for display/language detection (may be empty)
+ * @param contentType Stored content type
+ * @param sizeBytes Paste size in bytes
+ * @param isOneTime Whether the paste is one-time
+ */
+function buildTextViewerHtml(
+  textContent: string,
+  pasteId: string,
+  filename: string,
+  contentType: string,
+  sizeBytes: number,
+  isOneTime: boolean
+): string {
+  let highlightedHtml: string;
+  let language = 'plaintext';
+  const highlightingSkipped = sizeBytes > VIEWER_HIGHLIGHT_MAX_SIZE;
+
+  if (highlightingSkipped) {
+    highlightedHtml = escapeHtml(textContent);
+  } else {
+    try {
+      const knownLanguage = detectViewerLanguage(filename, contentType);
+      if (knownLanguage && hljs.getLanguage(knownLanguage)) {
+        highlightedHtml = hljs.highlight(textContent, {
+          language: knownLanguage,
+        }).value;
+        language = knownLanguage;
+      } else {
+        const result = hljs.highlightAuto(textContent);
+        highlightedHtml = result.value;
+        language = result.language || 'plaintext';
+      }
+    } catch (err) {
+      console.error(`[VIEWER] Syntax highlighting failed for ${pasteId}:`, err);
+      highlightedHtml = escapeHtml(textContent);
+      language = 'plaintext';
+    }
+  }
+
+  return renderTextViewerPage({
+    pasteId,
+    filename,
+    contentType,
+    sizeBytes,
+    highlightedHtml,
+    lineCount: textContent.split('\n').length,
+    language,
+    highlightingSkipped,
+    isOneTime,
+  });
+}
+
+/** Standard headers for browser-facing viewer HTML responses */
+function htmlViewerHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    'CDN-Cache-Control': 'no-store',
+    'Surrogate-Control': 'no-store',
+    Pragma: 'no-cache',
+    Expires: '0',
+    ...extra,
+  };
+}
+
+/**
+ * Builds a "paste not found" response: a styled HTML page for browsers,
+ * plain text for CLI/programmatic clients.
+ */
+function notFoundResponse(
+  request: Request,
+  message = 'Paste not found - it may have expired or was a one-time paste that has already been viewed.'
+): Response {
+  if (requestAcceptsHtml(request)) {
+    return new Response(renderErrorPage({ title: 'Paste not found', message }), {
+      status: 404,
+      headers: htmlViewerHeaders(),
+    });
+  }
+  return new Response('Paste not found', { status: 404 });
+}
+
 // Allowed CORS origin (restrict from wildcard)
-const ALLOWED_ORIGIN = "https://paste.d3d.dev";
+const ALLOWED_ORIGIN = 'https://paste.d3d.dev';
 
 /** Security headers applied to all responses */
 const SECURITY_HEADERS: Record<string, string> = {
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-  "Referrer-Policy": "no-referrer",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
-  "X-XSS-Protection": "1; mode=block",
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  'X-XSS-Protection': '1; mode=block',
 };
 
 /** Get CORS origin header based on request origin */
 function getCorsOrigin(request?: Request): string {
   if (!request) return ALLOWED_ORIGIN;
-  const origin = request.headers.get("Origin") || "";
+  const origin = request.headers.get('Origin') || '';
   // Allow the primary domain and localhost for development
   if (
     origin === ALLOWED_ORIGIN ||
-    origin.startsWith("http://localhost:") ||
-    origin.startsWith("http://127.0.0.1:")
+    origin.startsWith('http://localhost:') ||
+    origin.startsWith('http://127.0.0.1:')
   ) {
     return origin;
   }
@@ -134,16 +349,16 @@ function withSecurityHeaders(response: Response, request?: Request): Response {
     newHeaders.set(key, value);
   }
   // Set CSP for HTML responses
-  const contentType = newHeaders.get("Content-Type") || "";
-  if (contentType.includes("text/html")) {
+  const contentType = newHeaders.get('Content-Type') || '';
+  if (contentType.includes('text/html')) {
     newHeaders.set(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';",
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';"
     );
   }
   // Restrict CORS
-  if (newHeaders.has("Access-Control-Allow-Origin")) {
-    newHeaders.set("Access-Control-Allow-Origin", getCorsOrigin(request));
+  if (newHeaders.has('Access-Control-Allow-Origin')) {
+    newHeaders.set('Access-Control-Allow-Origin', getCorsOrigin(request));
   }
   return new Response(response.body, {
     status: response.status,
@@ -154,11 +369,10 @@ function withSecurityHeaders(response: Response, request?: Request): Response {
 
 // Generate a cryptographically secure random ID for the paste
 function generateId(length = 16): string {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const randomValues = new Uint32Array(length);
   crypto.getRandomValues(randomValues);
-  let result = "";
+  let result = '';
   for (let i = 0; i < length; i++) {
     result += chars.charAt(randomValues[i] % chars.length);
   }
@@ -179,7 +393,7 @@ interface ViewedPasteTracker {
 const viewedPastes: ViewedPasteTracker = {};
 
 // KV namespace key for tracking viewed pastes (to persist across worker restarts/instances)
-const VIEWED_PASTES_KEY = "viewed_pastes_registry";
+const VIEWED_PASTES_KEY = 'viewed_pastes_registry';
 
 // Helper function to safely parse JSON with a default value
 function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
@@ -187,27 +401,19 @@ function safeJsonParse<T>(jsonString: string | null, defaultValue: T): T {
   try {
     return JSON.parse(jsonString) as T;
   } catch (e) {
-    console.error("Error parsing JSON:", e);
+    console.error('Error parsing JSON:', e);
     return defaultValue;
   }
 }
 
 export default {
-  async fetch(
-    request: Request,
-    env: Env,
-    ctx: ExecutionContext,
-  ): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const response = await handleRequest(request, env, ctx);
     return withSecurityHeaders(response, request);
   },
 };
 
-async function handleRequest(
-  request: Request,
-  env: Env,
-  ctx: ExecutionContext,
-): Promise<Response> {
+async function handleRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   // Initialize analytics
   const analytics = createAnalytics(env);
 
@@ -218,32 +424,28 @@ async function handleRequest(
   // Initialize viewedPastes from KV store if available (completely optional enhancement)
   try {
     if (env.PASTE_METADATA) {
-      const storedViewedPastes =
-        await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
+      const storedViewedPastes = await env.PASTE_METADATA.get(VIEWED_PASTES_KEY);
       if (storedViewedPastes) {
-        const parsedPastes = safeJsonParse<ViewedPasteTracker>(
-          storedViewedPastes,
-          {},
-        );
+        const parsedPastes = safeJsonParse<ViewedPasteTracker>(storedViewedPastes, {});
         // Merge with any in-memory pastes (newer ones take precedence)
         Object.assign(viewedPastes, parsedPastes);
       }
     }
   } catch (error) {
     // Log but continue without error - KV is an enhancement, not a requirement
-    console.log("[KV] Optional paste metadata storage not available:", error);
+    console.log('[KV] Optional paste metadata storage not available:', error);
   }
   const url = new URL(request.url);
   const path = url.pathname;
 
   // Handle OPTIONS requests for CORS
-  if (request.method === "OPTIONS") {
+  if (request.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
-        "Access-Control-Allow-Origin": getCorsOrigin(request),
-        "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-        "Access-Control-Allow-Headers":
-          "Content-Type, X-Filename, X-Content-Type, X-One-Time, X-Expire, X-Burn-Reads, Authorization",
+        'Access-Control-Allow-Origin': getCorsOrigin(request),
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
+        'Access-Control-Allow-Headers':
+          'Content-Type, X-Filename, X-Content-Type, X-One-Time, X-Expire, X-Burn-Reads, Authorization',
       },
     });
   }
@@ -257,25 +459,25 @@ async function handleRequest(
   }
 
   // Upload a new paste
-  if (request.method === "POST") {
+  if (request.method === 'POST') {
     // Handle API uploads for web interface
-    if (path === "/api/upload") {
+    if (path === '/api/upload') {
       return await handleWebUpload(request, env);
     }
 
-    if (path === "/api/text") {
+    if (path === '/api/text') {
       return await handleTextUpload(request, env);
     }
 
     // Handle regular uploads
-    if (path === "/upload" || path === "/temp") {
-      const isOneTime = path === "/temp";
+    if (path === '/upload' || path === '/temp') {
+      const isOneTime = path === '/temp';
       return await handleUpload(request, env, isOneTime, false, analytics);
     }
 
     // Handle encrypted uploads
-    if (path === "/e/upload" || path === "/e/temp") {
-      const isOneTime = path === "/e/temp";
+    if (path === '/e/upload' || path === '/e/temp') {
+      const isOneTime = path === '/e/temp';
       return await handleUpload(request, env, isOneTime, true, analytics);
     }
 
@@ -284,24 +486,17 @@ async function handleRequest(
     // ============================================
 
     // Initialize multipart upload
-    if (path === "/upload/init" || path === "/e/upload/init") {
-      const isEncrypted = path.startsWith("/e/");
+    if (path === '/upload/init' || path === '/e/upload/init') {
+      const isEncrypted = path.startsWith('/e/');
       return await handleMultipartInit(request, env, isEncrypted);
     }
 
     // Complete multipart upload
-    const completeMatch = path.match(
-      /^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/complete$/,
-    );
+    const completeMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/complete$/);
     if (completeMatch) {
       const isEncrypted = !!completeMatch[1];
       const sessionId = completeMatch[2];
-      return await handleMultipartComplete(
-        request,
-        env,
-        sessionId,
-        isEncrypted,
-      );
+      return await handleMultipartComplete(request, env, sessionId, isEncrypted);
     }
 
     // Abort multipart upload
@@ -311,35 +506,26 @@ async function handleRequest(
       return await handleMultipartAbort(request, env, sessionId);
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response('Not found', { status: 404 });
   }
 
   // Handle PUT requests for multipart upload parts
-  if (request.method === "PUT") {
-    const partMatch = path.match(
-      /^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/part\/(\d+)$/,
-    );
+  if (request.method === 'PUT') {
+    const partMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/part\/(\d+)$/);
     if (partMatch) {
       const isEncrypted = !!partMatch[1];
       const sessionId = partMatch[2];
       const partNumber = parseInt(partMatch[3], 10);
-      return await handleMultipartPartUpload(
-        request,
-        env,
-        sessionId,
-        partNumber,
-      );
+      return await handleMultipartPartUpload(request, env, sessionId, partNumber);
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response('Not found', { status: 404 });
   }
 
   // Get a paste
-  if (request.method === "GET") {
+  if (request.method === 'GET') {
     // Handle multipart upload status (for resume)
-    const statusMatch = path.match(
-      /^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/status$/,
-    );
+    const statusMatch = path.match(/^(\/e)?\/upload\/([a-zA-Z0-9_-]+)\/status$/);
     if (statusMatch) {
       const sessionId = statusMatch[2];
       return await handleMultipartStatus(env, sessionId);
@@ -369,331 +555,53 @@ async function handleRequest(
     }
 
     // Try to serve styles.css directly if [site] configuration doesn't work
-    if (path === "/styles.css") {
+    if (path === '/styles.css') {
       // Serve MUI CSS instead of Tailwind
       const cssContent = getMuiCSS();
 
-      console.log("Serving MUI CSS file");
+      console.log('Serving MUI CSS file');
       return new Response(cssContent, {
         headers: {
-          "Content-Type": "text/css",
-          "Cache-Control": "public, max-age=86400",
+          'Content-Type': 'text/css',
+          'Cache-Control': 'public, max-age=86400',
         },
       });
     }
 
     // Serve the HTML homepage
-    if (path === "/") {
+    if (path === '/') {
       // Track homepage view
       await analytics.trackHomepageView(request);
 
-      return new Response(generateHomepage(url.origin), {
+      return new Response(generateHomepage(), {
         headers: {
-          "Content-Type": "text/html",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'text/html',
         },
       });
     }
 
-    return new Response("Not found", { status: 404 });
+    if (requestAcceptsHtml(request)) {
+      return new Response(
+        renderErrorPage({
+          title: 'Page not found',
+          message:
+            'The page you requested does not exist. If you followed a paste link, it may have expired or was a one-time paste that has already been viewed.',
+        }),
+        { status: 404, headers: htmlViewerHeaders() }
+      );
+    }
+
+    return new Response('Not found', { status: 404 });
   }
 
-  return new Response("Method not allowed", { status: 405 });
+  return new Response('Method not allowed', { status: 405 });
 }
 
-function generateHomepage(origin: string): string {
-  // Use the MUI styled homepage HTML
+/**
+ * Generates the homepage HTML using the MUI styled template.
+ */
+function generateHomepage(): string {
   return getHomepageHTML();
-  /* REMOVED TAILWIND HTML - Replaced with MUI version from muiStyles.ts
-<html lang="en">
-<head>
-  <title>DedPaste - Secure Pastebin Service</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="DedPaste - A secure pastebin service with end-to-end encryption, PGP integration, and CLI client">
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap">
-</head>
-<body class="bg-dark-900 text-gray-100 min-h-screen">
-  <header class="border-b border-dark-700 py-6">
-    <div class="container mx-auto px-4 md:px-6">
-      <div class="flex items-center justify-between">
-        <h1 class="text-3xl md:text-4xl font-bold text-white">
-          <span class="text-primary-400">Ded</span>Paste
-        </h1>
-        <div class="flex items-center space-x-4">
-          <a href="https://github.com/anoncam/dedpaste" target="_blank" rel="noopener noreferrer" class="btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-5 h-5 mr-2">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-            </svg>
-            GitHub
-          </a>
-          <a href="#install" class="btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-5 h-5 mr-2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Install
-          </a>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <main class="container mx-auto px-4 md:px-6 py-8">
-    <section class="mb-16">
-      <div class="max-w-3xl mx-auto text-center mb-12">
-        <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Secure Pastebin with Advanced Encryption</h2>
-        <p class="text-xl text-gray-300">A powerful CLI tool for sharing text and files with end-to-end encryption, PGP support, and one-time pastes.</p>
-      </div>
-
-      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">End-to-End Encryption</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Keep Your Content Private</h3>
-          <p class="text-gray-300">All encryption happens client-side. The server never sees your unencrypted content or keys.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">PGP Integration</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Use Your Existing Keys</h3>
-          <p class="text-gray-300">Leverage PGP keys from keyservers, GPG keyring, or Keybase for trusted communications.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">One-Time Pastes</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Self-Destructing Content</h3>
-          <p class="text-gray-300">Create pastes that automatically delete after being viewed once.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">Binary Support</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Beyond Just Text</h3>
-          <p class="text-gray-300">Upload and share binary files with proper content type detection.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">Friend-to-Friend</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Secure Sharing</h3>
-          <p class="text-gray-300">Easily manage keys for your friends and encrypt content specifically for them.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">CLI Power</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Advanced Scripting</h3>
-          <p class="text-gray-300">Command-line interface for easy integration with your existing scripts and workflows.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="install" class="mb-16">
-      <div class="max-w-3xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Installation</h2>
-        
-        <div class="mb-8">
-          <h3 class="text-xl font-semibold text-white mb-4">Using npm (recommended)</h3>
-          <pre><code>npm install -g dedpaste</code></pre>
-        </div>
-        
-        <div class="mb-8">
-          <h3 class="text-xl font-semibold text-white mb-4">From source</h3>
-          <pre><code>git clone https://github.com/anoncam/dedpaste.git
-cd dedpaste
-npm install
-npm link</code></pre>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-16">
-      <div class="max-w-4xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Quick Start Examples</h2>
-        
-        <div class="grid md:grid-cols-2 gap-6 mb-8">
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Basic Usage</h3>
-            <pre><code># Create a paste from stdin
-echo "Hello, World!" | dedpaste
-
-# Create a paste from a file
-dedpaste < file.txt
-
-# Create a one-time paste
-echo "Secret content" | dedpaste --temp
-
-# Specify file explicitly
-dedpaste --file path/to/file.txt</code></pre>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Encryption</h3>
-            <pre><code># Generate your key pair first
-dedpaste keys --gen-key
-
-# Create encrypted paste
-echo "Secret data" | dedpaste --encrypt
-
-# Encrypt for a friend
-echo "For Alice" | dedpaste send --encrypt --for alice
-
-# Use PGP encryption
-echo "PGP Secret" | dedpaste send --encrypt --for user@example.com --pgp</code></pre>
-          </div>
-        </div>
-        
-        <div class="grid md:grid-cols-2 gap-6">
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Key Management</h3>
-            <pre><code># Enhanced interactive key management (recommended)
-dedpaste keys:enhanced
-
-# List all your keys
-dedpaste keys --list
-
-# Add a friend's public key
-dedpaste keys --add-friend alice --key-file alice.pem
-
-# Add a PGP key from keyservers
-dedpaste keys --pgp-key user@example.com
-
-# Add a Keybase user's key
-dedpaste keys --keybase username</code></pre>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Retrieving Pastes</h3>
-            <pre><code># Get and display a paste
-dedpaste get https://paste.d3d.dev/AbCdEfGh
-
-# Get and decrypt an encrypted paste
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh
-
-# Use a specific key file
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh --key-file private.pem</code></pre>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-16">
-      <div class="max-w-4xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Troubleshooting</h2>
-        
-        <div class="space-y-6">
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Common PGP Errors</h3>
-            <div class="space-y-4">
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: PGP encryption requires a recipient</p>
-                <p class="text-gray-300">Always specify a recipient when using PGP encryption:</p>
-                <pre><code>echo "secret" | dedpaste send --encrypt --for user@example.com --pgp</code></pre>
-              </div>
-              
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: Failed to find PGP key for recipient</p>
-                <p class="text-gray-300">Make sure you've added the recipient's PGP key first:</p>
-                <pre><code>dedpaste keys --pgp-key user@example.com</code></pre>
-              </div>
-            </div>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Key Management Issues</h3>
-            <div class="space-y-4">
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: No personal key found</p>
-                <p class="text-gray-300">Generate your key pair first:</p>
-                <pre><code>dedpaste keys --gen-key</code></pre>
-              </div>
-              
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: Friend not found in key database</p>
-                <p class="text-gray-300">Add the friend's key before encrypting for them:</p>
-                <pre><code>dedpaste keys --add-friend name --key-file path/to/key.pem</code></pre>
-              </div>
-            </div>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">CLI Parameter Issues</h3>
-            <div class="space-y-4">
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: File not found with --file flag</p>
-                <p class="text-gray-300">Double-check the file path and use quotes for paths with spaces:</p>
-                <pre><code>dedpaste --file "path/to/my file.txt"</code></pre>
-              </div>
-              
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: --for is required when using --pgp</p>
-                <p class="text-gray-300">PGP encryption always requires specifying a recipient:</p>
-                <pre><code>dedpaste send --encrypt --for recipient@example.com --pgp</code></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-16">
-      <div class="max-w-3xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">API Usage</h2>
-        
-        <pre><code># Post content
-curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${origin}/upload
-
-# Post one-time content
-curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${origin}/temp
-
-# Post encrypted content (client-side encryption)
-curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${origin}/e/upload
-
-# Post encrypted one-time content
-curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${origin}/e/temp
-
-# Get content
-curl ${origin}/{paste-id}
-
-# Get encrypted content (requires client-side decryption)
-curl ${origin}/e/{paste-id}</code></pre>
-      </div>
-    </section>
-  </main>
-
-  <footer class="bg-dark-800 border-t border-dark-700 py-8">
-    <div class="container mx-auto px-4 md:px-6">
-      <div class="grid md:grid-cols-2 gap-8">
-        <div>
-          <h3 class="text-xl font-semibold text-white mb-4">DedPaste</h3>
-          <p class="text-gray-300 mb-4">A secure pastebin service with end-to-end encryption and advanced PGP integration.</p>
-          <p class="text-gray-400">&copy; ${new Date().getFullYear()} - ISC License</p>
-        </div>
-        
-        <div>
-          <h3 class="text-xl font-semibold text-white mb-4">Resources</h3>
-          <ul class="space-y-2">
-            <li><a href="https://github.com/anoncam/dedpaste" class="text-primary-400 hover:text-primary-300">GitHub Repository</a></li>
-            <li><a href="https://github.com/anoncam/dedpaste/issues" class="text-primary-400 hover:text-primary-300">Report Issues</a></li>
-            <li><a href="https://github.com/anoncam/dedpaste#contributing" class="text-primary-400 hover:text-primary-300">Contributing Guide</a></li>
-            <li><a href="https://www.npmjs.com/package/dedpaste" class="text-primary-400 hover:text-primary-300">NPM Package</a></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  */
 }
 
 async function handleUpload(
@@ -701,27 +609,27 @@ async function handleUpload(
   env: Env,
   isOneTime: boolean,
   isEncrypted: boolean,
-  analytics?: WorkerAnalytics,
+  analytics?: WorkerAnalytics
 ): Promise<Response> {
-  const contentType = request.headers.get("Content-Type") || "text/plain";
-  const filename = request.headers.get("X-Filename") || "";
+  const contentType = request.headers.get('Content-Type') || 'text/plain';
+  const filename = request.headers.get('X-Filename') || '';
   const content = await request.arrayBuffer();
 
   // Read expiration and burn-after-reading headers
-  const expireDuration = request.headers.get("X-Expire") || undefined;
-  const burnReadsHeader = request.headers.get("X-Burn-Reads");
+  const expireDuration = request.headers.get('X-Expire') || undefined;
+  const burnReadsHeader = request.headers.get('X-Burn-Reads');
   const burnAfterReads = burnReadsHeader ? parseInt(burnReadsHeader, 10) : undefined;
 
   // Check if the content is empty
   if (content.byteLength === 0) {
-    return new Response("Content cannot be empty", { status: 400 });
+    return new Response('Content cannot be empty', { status: 400 });
   }
 
   // Enforce upload size limit for standard uploads
   if (content.byteLength > MAX_STANDARD_UPLOAD_SIZE) {
     return new Response(
       `Content too large. Maximum size is ${MAX_STANDARD_UPLOAD_SIZE / 1024 / 1024}MB for standard uploads. Use multipart upload for larger files.`,
-      { status: 413 },
+      { status: 413 }
     );
   }
 
@@ -730,7 +638,7 @@ async function handleUpload(
 
   // Ensure encrypted content is always stored with the correct content type
   // This fixes issues with one-time encrypted pastes
-  const adjustedContentType = isEncrypted ? "application/json" : contentType;
+  const adjustedContentType = isEncrypted ? 'application/json' : contentType;
 
   // Compute expiration timestamp if duration specified
   let expiresAt: number | undefined;
@@ -759,11 +667,11 @@ async function handleUpload(
 
     // Store the content in R2 with the prefixed key
     await env.PASTE_BUCKET.put(storageKey, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     console.log(
-      `Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}, expires=${expiresAt || "never"}`,
+      `Created one-time paste with storage key ${storageKey}, isEncrypted=${isEncrypted}, expires=${expiresAt || 'never'}`
     );
   } else {
     // Regular paste - standard storage path
@@ -780,10 +688,12 @@ async function handleUpload(
 
     // Store the content in R2 with metadata
     await env.PASTE_BUCKET.put(id, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
-    console.log(`Created regular paste ${id}, isEncrypted=${isEncrypted}, expires=${expiresAt || "never"}`);
+    console.log(
+      `Created regular paste ${id}, isEncrypted=${isEncrypted}, expires=${expiresAt || 'never'}`
+    );
   }
 
   const baseUrl = new URL(request.url).origin;
@@ -796,10 +706,8 @@ async function handleUpload(
       : `${baseUrl}/${id}/${encodedFilename}`;
   } else {
     // For text pastes without filename, add .txt extension
-    const extension = contentType === "text/plain" ? "/paste.txt" : "";
-    pasteUrl = isEncrypted
-      ? `${baseUrl}/e/${id}${extension}`
-      : `${baseUrl}/${id}${extension}`;
+    const extension = contentType === 'text/plain' ? '/paste.txt' : '';
+    pasteUrl = isEncrypted ? `${baseUrl}/e/${id}${extension}` : `${baseUrl}/${id}${extension}`;
   }
 
   // Track paste creation
@@ -814,14 +722,14 @@ async function handleUpload(
 
   // Build response headers
   const responseHeaders: Record<string, string> = {
-    "Access-Control-Allow-Origin": "*",
-    "Content-Type": "text/plain",
+    'Access-Control-Allow-Origin': '*',
+    'Content-Type': 'text/plain',
   };
   if (expiresAt) {
-    responseHeaders["X-Expires-At"] = new Date(expiresAt).toISOString();
+    responseHeaders['X-Expires-At'] = new Date(expiresAt).toISOString();
   }
   if (burnAfterReads) {
-    responseHeaders["X-Burn-Reads"] = burnAfterReads.toString();
+    responseHeaders['X-Burn-Reads'] = burnAfterReads.toString();
   }
 
   // Return the paste URL - we always use the unprefixed ID in the URL
@@ -834,15 +742,21 @@ async function handleGet(
   ctx: ExecutionContext,
   isEncrypted: boolean,
   request: Request,
-  urlFilename?: string | null,
+  urlFilename?: string | null
 ): Promise<Response> {
   // Check for raw parameter to bypass markdown rendering
   const url = new URL(request.url);
-  const wantsRaw = url.searchParams.get("raw") === "true";
+  const wantsRaw = url.searchParams.get('raw') === 'true';
+  // download=true forces a Content-Disposition: attachment on raw responses
+  const wantsDownload = url.searchParams.get('download') === 'true';
+  // confirm=true acknowledges the one-time interstitial and consumes the paste
+  const confirmedOneTime = url.searchParams.get('confirm') === 'true';
+  // Browser clients (Accept: text/html) get HTML viewer pages unless raw was requested
+  const wantsBrowserView = requestAcceptsHtml(request) && !wantsRaw;
   // First, check if this is a one-time paste by trying to get it with the one-time prefix
   const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
   console.log(
-    `[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`,
+    `[GET] Checking for one-time paste with key: ${oneTimeKey}, isEncrypted=${isEncrypted}`
   );
 
   // Add onlyIf condition to bust caches
@@ -853,7 +767,7 @@ async function handleGet(
     // Check if this paste has already been viewed in this instance
     if (oneTimeKey in viewedPastes) {
       console.log(
-        `[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`,
+        `[TEMP PASTE] Paste already viewed and pending deletion: ${id}, key=${oneTimeKey}`
       );
 
       // Double-check by trying to delete it again, just to be sure
@@ -863,21 +777,75 @@ async function handleGet(
         // Ignore errors
       }
 
+      if (requestAcceptsHtml(request)) {
+        return new Response(
+          renderErrorPage({
+            title: 'Paste not found',
+            message: 'This one-time paste has already been viewed and is no longer available.',
+          }),
+          {
+            status: 404,
+            headers: htmlViewerHeaders({
+              'X-One-Time': 'true',
+              'X-Already-Viewed': 'true',
+            }),
+          }
+        );
+      }
+
       return new Response(
-        "This one-time paste has already been viewed and is no longer available.",
+        'This one-time paste has already been viewed and is no longer available.',
         {
           status: 404,
           headers: {
-            "Content-Type": "text/plain",
-            "Cache-Control":
-              "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-            "Surrogate-Control": "no-store",
-            Pragma: "no-cache",
-            Expires: "0",
-            "X-One-Time": "true",
-            "X-Already-Viewed": "true",
+            'Content-Type': 'text/plain',
+            'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+            'Surrogate-Control': 'no-store',
+            Pragma: 'no-cache',
+            Expires: '0',
+            'X-One-Time': 'true',
+            'X-Already-Viewed': 'true',
           },
-        },
+        }
+      );
+    }
+
+    // For browser page loads, never consume the paste immediately.
+    // Encrypted one-time pastes get the encrypted landing page; all others
+    // get a confirmation interstitial whose reveal button re-requests the
+    // paste with ?confirm=true&raw=true (that request runs the normal
+    // consume-and-delete flow below). Link-preview bots don't execute JS,
+    // so they can no longer burn one-time pastes before the recipient.
+    if (wantsBrowserView && (isEncrypted || !confirmedOneTime)) {
+      let metaContentType = 'text/plain';
+      let metaFilename = '';
+      try {
+        const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
+        metaContentType = cleanMetadataString(metadata.contentType) || 'text/plain';
+        metaFilename = cleanMetadataString(metadata.filename);
+      } catch (err) {
+        console.error(`[TEMP PASTE] Error reading metadata for interstitial ${id}: ${err}`);
+      }
+
+      if (isEncrypted) {
+        return new Response(
+          renderEncryptedLandingPage({
+            pasteId: id,
+            pasteUrl: `${url.origin}/e/${id}`,
+            isOneTime: true,
+          }),
+          { headers: htmlViewerHeaders({ 'X-One-Time': 'true' }) }
+        );
+      }
+
+      return new Response(
+        renderOneTimeInterstitialPage({
+          pasteId: id,
+          filename: urlFilename || metaFilename,
+          contentType: metaContentType,
+          sizeBytes: oneTimePaste.size,
+        }),
+        { headers: htmlViewerHeaders({ 'X-One-Time': 'true' }) }
       );
     }
 
@@ -891,44 +859,35 @@ async function handleGet(
     // Store in KV if available (optional enhancement)
     if (env.PASTE_METADATA) {
       try {
-        await env.PASTE_METADATA.put(
-          VIEWED_PASTES_KEY,
-          JSON.stringify(viewedPastes),
-        );
+        await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
       } catch (error) {
         // Non-blocking error - the in-memory tracking still works
         console.log(`[KV] Optional metadata storage unavailable: ${error}`);
       }
     }
-    console.log(
-      `[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`,
-    );
+    console.log(`[TEMP PASTE] Found one-time paste with ID: ${id}, isEncrypted=${isEncrypted}`);
 
     // Get the content and metadata before we delete the paste
     const content = await oneTimePaste.arrayBuffer();
-    let contentType = "text/plain";
-    let filename = "";
+    let contentType = 'text/plain';
+    let filename = '';
 
     try {
       const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
-      contentType = metadata.contentType || "text/plain";
-      filename = metadata.filename || "";
-      console.log(
-        `[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`,
-      );
+      contentType = cleanMetadataString(metadata.contentType) || 'text/plain';
+      filename = cleanMetadataString(metadata.filename);
+      console.log(`[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
     } catch (err) {
-      console.error(
-        `[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`,
-      );
+      console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
     }
 
     // Override content type if this is an encrypted paste but the content type doesn't match
     // This ensures proper decryption on the client side
-    if (isEncrypted && contentType !== "application/json") {
+    if (isEncrypted && contentType !== 'application/json') {
       console.log(
-        `[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`,
+        `[TEMP PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`
       );
-      contentType = "application/json";
+      contentType = 'application/json';
     }
 
     // Delete the paste immediately before returning the content
@@ -936,7 +895,7 @@ async function handleGet(
       // First deletion attempt - force immediate deletion
       await env.PASTE_BUCKET.delete(oneTimeKey);
       console.log(
-        `[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`,
+        `[TEMP PASTE] First deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`
       );
 
       // Important: Add a small delay to allow propagation in Cloudflare's systems
@@ -945,14 +904,14 @@ async function handleGet(
       // Second deletion attempt to ensure consistency
       await env.PASTE_BUCKET.delete(oneTimeKey);
       console.log(
-        `[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`,
+        `[TEMP PASTE] Second deletion attempt for one-time paste with ID: ${id}, key=${oneTimeKey}, isEncrypted=${isEncrypted}`
       );
 
       // Verify the deletion worked
       const verifyDeletion = await env.PASTE_BUCKET.get(oneTimeKey);
       if (verifyDeletion) {
         console.error(
-          `[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`,
+          `[TEMP PASTE] Warning: Failed to delete one-time paste: ${id}, key=${oneTimeKey}`
         );
         // Even though deletion appears to have failed, mark it as viewed in our tracking
         // system to prevent subsequent access
@@ -962,10 +921,7 @@ async function handleGet(
         // Store updated tracking in KV if available
         if (env.PASTE_METADATA) {
           try {
-            await env.PASTE_METADATA.put(
-              VIEWED_PASTES_KEY,
-              JSON.stringify(viewedPastes),
-            );
+            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
           } catch (kvError) {
             // Non-blocking - in-memory tracking still works
             console.log(`[KV] Optional metadata update failed: ${kvError}`);
@@ -976,7 +932,7 @@ async function handleGet(
         await env.PASTE_BUCKET.delete(oneTimeKey);
       } else {
         console.log(
-          `[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`,
+          `[TEMP PASTE] Successfully deleted one-time paste with ID: ${id}, key=${oneTimeKey}`
         );
         viewedPastes[oneTimeKey].deleted = true;
         viewedPastes[oneTimeKey].attempts++;
@@ -984,21 +940,16 @@ async function handleGet(
         // Store updated tracking in KV
         try {
           if (env.PASTE_METADATA) {
-            await env.PASTE_METADATA.put(
-              VIEWED_PASTES_KEY,
-              JSON.stringify(viewedPastes),
-            );
+            await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
           }
         } catch (kvError) {
           console.error(
-            `[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`,
+            `[TEMP PASTE] Error updating paste registry after successful deletion: ${kvError}`
           );
         }
       }
     } catch (error) {
-      console.error(
-        `[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`,
-      );
+      console.error(`[TEMP PASTE] Error deleting one-time paste with ID: ${id}: ${error}`);
 
       // Schedule multiple backup deletion attempts to make sure it gets deleted
       ctx.waitUntil(
@@ -1011,7 +962,7 @@ async function handleGet(
               const delay = 200 * Math.pow(2, i); // 200ms, 400ms, 800ms, 1600ms, 3200ms
               await new Promise((resolve) => setTimeout(resolve, delay));
               console.log(
-                `[TEMP PASTE] Backup deletion attempt ${i + 1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`,
+                `[TEMP PASTE] Backup deletion attempt ${i + 1}/${deletionAttempts} for one-time paste ${id}, key=${oneTimeKey}`
               );
               await env.PASTE_BUCKET.delete(oneTimeKey);
 
@@ -1019,7 +970,7 @@ async function handleGet(
               const checkResult = await env.PASTE_BUCKET.get(oneTimeKey);
               if (!checkResult) {
                 console.log(
-                  `[TEMP PASTE] Backup deletion attempt ${i + 1} successfully deleted one-time paste ${id}`,
+                  `[TEMP PASTE] Backup deletion attempt ${i + 1} successfully deleted one-time paste ${id}`
                 );
 
                 // Update tracking with success
@@ -1029,15 +980,10 @@ async function handleGet(
                 // Store updated tracking in KV if available
                 if (env.PASTE_METADATA) {
                   try {
-                    await env.PASTE_METADATA.put(
-                      VIEWED_PASTES_KEY,
-                      JSON.stringify(viewedPastes),
-                    );
+                    await env.PASTE_METADATA.put(VIEWED_PASTES_KEY, JSON.stringify(viewedPastes));
                   } catch (kvUpdateError) {
                     // Non-blocking - in-memory tracking still works
-                    console.log(
-                      `[KV] Optional metadata backup update failed: ${kvUpdateError}`,
-                    );
+                    console.log(`[KV] Optional metadata backup update failed: ${kvUpdateError}`);
                   }
                 }
 
@@ -1045,72 +991,92 @@ async function handleGet(
               }
             } catch (backupError) {
               console.error(
-                `[TEMP PASTE] Backup deletion attempt ${i + 1} failed for one-time paste ${id}: ${backupError}`,
+                `[TEMP PASTE] Backup deletion attempt ${i + 1} failed for one-time paste ${id}: ${backupError}`
               );
             }
           }
-        })(),
+        })()
       );
     }
 
     // Check if this is markdown content that should be rendered as HTML
     const isMarkdown =
-      contentType === "text/markdown" ||
-      contentType === "text/x-markdown" ||
-      filename.endsWith(".md") ||
-      filename.endsWith(".markdown");
+      contentType === 'text/markdown' ||
+      contentType === 'text/x-markdown' ||
+      filename.endsWith('.md') ||
+      filename.endsWith('.markdown');
 
-    if (isMarkdown && !isEncrypted && !wantsRaw) {
+    if (isMarkdown && !isEncrypted && wantsBrowserView) {
       // Convert markdown to HTML for browser viewing
       const textContent = new TextDecoder().decode(content);
-      const renderedHTML = await renderMarkdownAsHTML(
-        textContent,
-        id,
-        filename,
-        true,
-      );
+      const renderedHTML = await renderMarkdownAsHTML(textContent, id, filename, true);
 
       return new Response(renderedHTML, {
         headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Access-Control-Allow-Origin": "*",
-          "Cache-Control":
-            "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-          "CDN-Cache-Control": "no-store",
-          "Surrogate-Control": "no-store",
-          Pragma: "no-cache",
-          Expires: "0",
-          "X-Original-Content-Type": contentType,
-          "X-Rendered-Markdown": "true",
-          "X-One-Time": "true",
-          "X-Paste-Viewed-At": new Date().toISOString(),
+          'Content-Type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'CDN-Cache-Control': 'no-store',
+          'Surrogate-Control': 'no-store',
+          Pragma: 'no-cache',
+          Expires: '0',
+          'X-Original-Content-Type': contentType,
+          'X-Rendered-Markdown': 'true',
+          'X-One-Time': 'true',
+          'X-Paste-Viewed-At': new Date().toISOString(),
         },
+      });
+    }
+
+    const effectiveFilename =
+      urlFilename || filename || `${id}${getExtensionForContentType(contentType)}`;
+
+    // Universal text viewer for browsers that confirmed the interstitial
+    // (direct navigation to ?confirm=true; the interstitial's JS fetch
+    // requests raw content instead, so it never reaches this branch)
+    if (
+      wantsBrowserView &&
+      !isEncrypted &&
+      isTextualContentType(contentType) &&
+      content.byteLength <= VIEWER_MAX_SIZE
+    ) {
+      const textContent = new TextDecoder().decode(content);
+      const viewerHtml = buildTextViewerHtml(
+        textContent,
+        id,
+        effectiveFilename,
+        contentType,
+        content.byteLength,
+        true
+      );
+
+      return new Response(viewerHtml, {
+        headers: htmlViewerHeaders({
+          'X-Original-Content-Type': contentType,
+          'X-One-Time': 'true',
+          'X-Paste-Viewed-At': new Date().toISOString(),
+        }),
       });
     }
 
     // Determine if content should be displayed inline or downloaded
     const isViewableInBrowser = isViewableContentType(contentType);
-    const disposition = isViewableInBrowser ? "inline" : "attachment";
-    const effectiveFilename =
-      urlFilename ||
-      filename ||
-      `${id}${getExtensionForContentType(contentType)}`;
+    const disposition = wantsDownload || !isViewableInBrowser ? 'attachment' : 'inline';
 
     // Return the content with stronger cache control headers
     return new Response(content, {
       headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0",
-        "CDN-Cache-Control": "no-store", // Additional CDN-specific directive
-        "Surrogate-Control": "no-store", // For Cloudflare and other CDNs
-        Pragma: "no-cache",
-        Expires: "0",
-        "X-Encrypted": isEncrypted ? "true" : "false",
-        "X-One-Time": "true", // Mark as one-time paste explicitly
-        "X-Paste-Viewed-At": new Date().toISOString(), // Add timestamp of viewing
+        'Content-Type': contentType,
+        'Content-Disposition': `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+        'CDN-Cache-Control': 'no-store', // Additional CDN-specific directive
+        'Surrogate-Control': 'no-store', // For Cloudflare and other CDNs
+        Pragma: 'no-cache',
+        Expires: '0',
+        'X-Encrypted': isEncrypted ? 'true' : 'false',
+        'X-One-Time': 'true', // Mark as one-time paste explicitly
+        'X-Paste-Viewed-At': new Date().toISOString(), // Add timestamp of viewing
       },
     });
   }
@@ -1120,19 +1086,19 @@ async function handleGet(
   const paste = await env.PASTE_BUCKET.get(id);
 
   if (!paste) {
-    return new Response("Paste not found", { status: 404 });
+    return notFoundResponse(request);
   }
 
   // Regular paste - get metadata (available without reading the body)
-  let contentType = "text/plain";
-  let filename = "";
+  let contentType = 'text/plain';
+  let filename = '';
 
   try {
     const metadata = paste.customMetadata as unknown as PasteMetadata;
-    contentType = metadata.contentType || "text/plain";
-    filename = metadata.filename || "";
+    contentType = cleanMetadataString(metadata.contentType) || 'text/plain';
+    filename = cleanMetadataString(metadata.filename);
     console.log(
-      `[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`,
+      `[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`
     );
   } catch (err) {
     console.error(`Error retrieving metadata for paste ${id}: ${err}`);
@@ -1140,27 +1106,39 @@ async function handleGet(
 
   // Use URL filename if provided, otherwise use stored filename
   const effectiveFilename =
-    urlFilename ||
-    filename ||
-    `${id}${getExtensionForContentType(contentType)}`;
+    urlFilename || filename || `${id}${getExtensionForContentType(contentType)}`;
 
   // Override content type if this is an encrypted paste but the content type doesn't match
   // This ensures proper decryption on the client side
-  if (isEncrypted && contentType !== "application/json") {
+  if (isEncrypted && contentType !== 'application/json') {
     console.log(
-      `[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`,
+      `[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`
     );
-    contentType = "application/json";
+    contentType = 'application/json';
+  }
+
+  // Encrypted pastes: browsers get a landing page explaining client-side
+  // decryption via the CLI; CLI/curl clients (and ?raw=true) keep receiving
+  // the raw ciphertext JSON exactly as before.
+  if (isEncrypted && wantsBrowserView) {
+    return new Response(
+      renderEncryptedLandingPage({
+        pasteId: id,
+        pasteUrl: `${url.origin}/e/${id}`,
+        isOneTime: false,
+      }),
+      { headers: htmlViewerHeaders({ 'X-Encrypted': 'true' }) }
+    );
   }
 
   // Check if this is markdown content that should be rendered as HTML
   const isMarkdown =
-    contentType === "text/markdown" ||
-    contentType === "text/x-markdown" ||
-    filename.endsWith(".md") ||
-    filename.endsWith(".markdown");
+    contentType === 'text/markdown' ||
+    contentType === 'text/x-markdown' ||
+    filename.endsWith('.md') ||
+    filename.endsWith('.markdown');
 
-  if (isMarkdown && !isEncrypted && !wantsRaw) {
+  if (isMarkdown && !isEncrypted && wantsBrowserView) {
     // Markdown rendering requires buffering the content into memory
     const content = await paste.arrayBuffer();
     const textContent = new TextDecoder().decode(content);
@@ -1168,35 +1146,61 @@ async function handleGet(
 
     return new Response(renderedHTML, {
       headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control":
-          "no-store, no-cache, must-revalidate, proxy-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-        "X-Original-Content-Type": contentType,
-        "X-Rendered-Markdown": "true",
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        Pragma: 'no-cache',
+        Expires: '0',
+        'X-Original-Content-Type': contentType,
+        'X-Rendered-Markdown': 'true',
       },
+    });
+  }
+
+  // Universal text viewer: browsers get a styled, syntax-highlighted page
+  // for any text-like paste. CLI/curl clients and ?raw=true requests keep
+  // receiving the raw bytes. Very large pastes fall through to raw streaming.
+  if (
+    wantsBrowserView &&
+    !isEncrypted &&
+    isTextualContentType(contentType) &&
+    paste.size <= VIEWER_MAX_SIZE
+  ) {
+    const content = await paste.arrayBuffer();
+    const textContent = new TextDecoder().decode(content);
+    const viewerHtml = buildTextViewerHtml(
+      textContent,
+      id,
+      effectiveFilename,
+      contentType,
+      content.byteLength,
+      false
+    );
+
+    return new Response(viewerHtml, {
+      headers: htmlViewerHeaders({
+        'X-Original-Content-Type': contentType,
+      }),
     });
   }
 
   // Determine if content should be displayed inline or downloaded
   const isViewableInBrowser = isViewableContentType(contentType);
-  const disposition = isViewableInBrowser ? "inline" : "attachment";
+  const disposition = wantsDownload || !isViewableInBrowser ? 'attachment' : 'inline';
 
   // Stream the R2 object body directly to avoid buffering large files in memory.
   // This is critical for multipart-uploaded files which can be up to 5GB.
   return new Response(paste.body, {
     headers: {
-      "Content-Type": contentType,
-      "Content-Disposition": `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
-      "Content-Length": paste.size.toString(),
-      "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      Pragma: "no-cache",
-      Expires: "0",
+      'Content-Type': contentType,
+      'Content-Disposition': `${disposition}; filename="${sanitizeFilename(effectiveFilename)}"`,
+      'Content-Length': paste.size.toString(),
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      Pragma: 'no-cache',
+      Expires: '0',
       // Add a header to indicate if the paste is encrypted
-      "X-Encrypted": isEncrypted ? "true" : "false",
+      'X-Encrypted': isEncrypted ? 'true' : 'false',
     },
   });
 }
@@ -1206,14 +1210,14 @@ async function handleGet(
  */
 function isViewableContentType(contentType: string): boolean {
   const viewableTypes = [
-    "text/",
-    "image/",
-    "audio/",
-    "video/",
-    "application/pdf",
-    "application/json",
-    "application/xml",
-    "application/javascript",
+    'text/',
+    'image/',
+    'audio/',
+    'video/',
+    'application/pdf',
+    'application/json',
+    'application/xml',
+    'application/javascript',
   ];
 
   return viewableTypes.some((type) => contentType.startsWith(type));
@@ -1224,37 +1228,37 @@ function isViewableContentType(contentType: string): boolean {
  */
 function getExtensionForContentType(contentType: string): string {
   const extensionMap: { [key: string]: string } = {
-    "text/plain": ".txt",
-    "text/html": ".html",
-    "text/css": ".css",
-    "text/javascript": ".js",
-    "text/markdown": ".md",
-    "text/x-markdown": ".md",
-    "application/json": ".json",
-    "application/xml": ".xml",
-    "application/pdf": ".pdf",
-    "application/zip": ".zip",
-    "application/x-zip-compressed": ".zip",
-    "application/gzip": ".gz",
-    "application/x-tar": ".tar",
-    "application/x-7z-compressed": ".7z",
-    "application/x-rar-compressed": ".rar",
-    "application/octet-stream": ".bin",
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/gif": ".gif",
-    "image/svg+xml": ".svg",
-    "image/webp": ".webp",
-    "video/mp4": ".mp4",
-    "video/webm": ".webm",
-    "video/ogg": ".ogv",
-    "audio/mpeg": ".mp3",
-    "audio/ogg": ".ogg",
-    "audio/wav": ".wav",
-    "audio/webm": ".weba",
+    'text/plain': '.txt',
+    'text/html': '.html',
+    'text/css': '.css',
+    'text/javascript': '.js',
+    'text/markdown': '.md',
+    'text/x-markdown': '.md',
+    'application/json': '.json',
+    'application/xml': '.xml',
+    'application/pdf': '.pdf',
+    'application/zip': '.zip',
+    'application/x-zip-compressed': '.zip',
+    'application/gzip': '.gz',
+    'application/x-tar': '.tar',
+    'application/x-7z-compressed': '.7z',
+    'application/x-rar-compressed': '.rar',
+    'application/octet-stream': '.bin',
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/svg+xml': '.svg',
+    'image/webp': '.webp',
+    'video/mp4': '.mp4',
+    'video/webm': '.webm',
+    'video/ogg': '.ogv',
+    'audio/mpeg': '.mp3',
+    'audio/ogg': '.ogg',
+    'audio/wav': '.wav',
+    'audio/webm': '.weba',
   };
 
-  return extensionMap[contentType] || "";
+  return extensionMap[contentType] || '';
 }
 
 /**
@@ -1268,8 +1272,8 @@ function getExtensionForContentType(contentType: string): string {
 async function renderMarkdownAsHTML(
   markdownContent: string,
   pasteId: string,
-  filename: string = "",
-  isOneTime: boolean = false,
+  filename: string = '',
+  isOneTime: boolean = false
 ): Promise<string> {
   // Create a custom renderer for marked
   const renderer = new marked.Renderer();
@@ -1292,7 +1296,7 @@ async function renderMarkdownAsHTML(
     const blockId = `code-block-${++codeBlockId}`;
 
     // Check if this is a mermaid diagram
-    if (lang === "mermaid") {
+    if (lang === 'mermaid') {
       hasMermaidDiagrams = true;
       const mermaidId = `mermaid-${++mermaidBlockId}`;
 
@@ -1330,7 +1334,7 @@ async function renderMarkdownAsHTML(
 
     // Regular code block handling
     let highlighted: string;
-    let detectedLanguage = lang || "plaintext";
+    let detectedLanguage = lang || 'plaintext';
 
     try {
       if (lang && hljs.getLanguage(lang)) {
@@ -1340,12 +1344,12 @@ async function renderMarkdownAsHTML(
         // Auto-detect language
         const result = hljs.highlightAuto(text);
         highlighted = result.value;
-        detectedLanguage = result.language || "plaintext";
+        detectedLanguage = result.language || 'plaintext';
       }
     } catch (err) {
       // Fallback to plain text if highlighting fails
       highlighted = escapeHtml(text);
-      detectedLanguage = "plaintext";
+      detectedLanguage = 'plaintext';
     }
 
     // Return the highlighted code with a wrapper for the copy button
@@ -1376,10 +1380,10 @@ async function renderMarkdownAsHTML(
   const htmlContent = sanitizeHtml(rawHtmlContent);
 
   // Generate a title from the filename or first heading
-  let title = filename || "Markdown Document";
-  if (title.endsWith(".md")) {
+  let title = filename || 'Markdown Document';
+  if (title.endsWith('.md')) {
     title = title.slice(0, -3);
-  } else if (title.endsWith(".markdown")) {
+  } else if (title.endsWith('.markdown')) {
     title = title.slice(0, -9);
   }
 
@@ -1597,99 +1601,9 @@ async function renderMarkdownAsHTML(
       color: #f3f4f6;
     }
     
-    /* Highlight.js theme - GitHub Dark */
-    .hljs {
-      color: #e1e4e8;
-      background: #18171c;
-    }
-    
-    .hljs-doctag,
-    .hljs-keyword,
-    .hljs-meta .hljs-keyword,
-    .hljs-template-tag,
-    .hljs-template-variable,
-    .hljs-type,
-    .hljs-variable.language_ {
-      color: #ff7b72;
-    }
-    
-    .hljs-title,
-    .hljs-title.class_,
-    .hljs-title.class_.inherited__,
-    .hljs-title.function_ {
-      color: #d2a8ff;
-    }
-    
-    .hljs-attr,
-    .hljs-attribute,
-    .hljs-literal,
-    .hljs-meta,
-    .hljs-number,
-    .hljs-operator,
-    .hljs-selector-attr,
-    .hljs-selector-class,
-    .hljs-selector-id,
-    .hljs-variable {
-      color: #79c0ff;
-    }
-    
-    .hljs-meta .hljs-string,
-    .hljs-regexp,
-    .hljs-string {
-      color: #a5d6ff;
-    }
-    
-    .hljs-built_in,
-    .hljs-symbol {
-      color: #ffa657;
-    }
-    
-    .hljs-code,
-    .hljs-comment,
-    .hljs-formula {
-      color: #8b949e;
-    }
-    
-    .hljs-name,
-    .hljs-quote,
-    .hljs-selector-pseudo,
-    .hljs-selector-tag {
-      color: #7ee83f;
-    }
-    
-    .hljs-subst {
-      color: #e1e4e8;
-    }
-    
-    .hljs-section {
-      color: #1f6feb;
-      font-weight: bold;
-    }
-    
-    .hljs-bullet {
-      color: #f2cc60;
-    }
-    
-    .hljs-emphasis {
-      color: #e1e4e8;
-      font-style: italic;
-    }
-    
-    .hljs-strong {
-      color: #e1e4e8;
-      font-weight: bold;
-    }
-    
-    .hljs-addition {
-      color: #aff5b4;
-      background-color: #033a16;
-    }
-    
-    .hljs-deletion {
-      color: #ffdcd7;
-      background-color: #67060c;
-    }
-    
+    /* Highlight.js theme - GitHub Dark (shared with the text viewer) */
+    ${getHljsThemeStyles()}
+
     .markdown-content blockquote {
       border-left: 4px solid #8f8fff;
       padding-left: 1rem;
@@ -1917,12 +1831,12 @@ async function renderMarkdownAsHTML(
 <body>
   <header class="header">
     <div class="header-title">
-      <span class="brand">Ded</span>Paste - Markdown Viewer
+      <span class="brand">Ded</span>Paste &middot; ${escapeHtml(title)}
     </div>
     <div class="paste-info">
-      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ""}
+      ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ''}
       <span class="paste-id">ID: ${escapeHtml(pasteId)}</span>
-      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ""}
+      ${isOneTime ? '<span class="one-time-badge">⚠️ One-Time Paste</span>' : ''}
     </div>
   </header>
   
@@ -1955,122 +1869,80 @@ async function renderMarkdownAsHTML(
   <script>
     // Store the original markdown content
     const originalMarkdown = ${safeJsonEmbed(markdownContent)};
-    
+
+    // Legacy clipboard fallback using a hidden textarea + execCommand
+    function legacyCopy(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      let ok = false;
+      try {
+        textarea.select();
+        ok = document.execCommand('copy');
+      } catch (err) {
+        ok = false;
+      }
+      document.body.removeChild(textarea);
+      return ok;
+    }
+
+    // Copy helper: navigator.clipboard first, execCommand fallback
+    function copyTextToClipboard(text, onSuccess, onFailure) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+          if (legacyCopy(text)) { onSuccess(); } else { onFailure(); }
+        });
+      } else if (legacyCopy(text)) {
+        onSuccess();
+      } else {
+        onFailure();
+      }
+    }
+
+    // Briefly flips a button into its "copied" state
+    function flashCopied(button, label) {
+      const originalText = label.textContent;
+      button.classList.add('copied');
+      label.textContent = 'Copied!';
+      setTimeout(() => {
+        button.classList.remove('copied');
+        label.textContent = originalText;
+      }, 2000);
+    }
+
     // Copy all markdown source to clipboard
     function copyAllMarkdown() {
       const button = document.querySelector('.copy-all-button');
       const buttonText = button.querySelector('.copy-all-text');
-      const originalText = buttonText.textContent;
-      
-      // Create a temporary textarea to copy from
-      const textarea = document.createElement('textarea');
-      textarea.value = originalMarkdown;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      
-      try {
-        // Select and copy the text
-        textarea.select();
-        document.execCommand('copy');
-        
-        // Update button state
-        button.classList.add('copied');
-        buttonText.textContent = 'Copied!';
-        
-        // Reset after 2 seconds
-        setTimeout(() => {
-          button.classList.remove('copied');
-          buttonText.textContent = originalText;
-        }, 2000);
-      } catch (err) {
-        console.error('Failed to copy markdown:', err);
-        // Try modern clipboard API as fallback
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(originalMarkdown).then(() => {
-            button.classList.add('copied');
-            buttonText.textContent = 'Copied!';
-            setTimeout(() => {
-              button.classList.remove('copied');
-              buttonText.textContent = originalText;
-            }, 2000);
-          }).catch(err => {
-            console.error('Clipboard API also failed:', err);
-            alert('Failed to copy markdown. Please try selecting and copying manually.');
-          });
-        }
-      } finally {
-        document.body.removeChild(textarea);
-      }
+
+      copyTextToClipboard(originalMarkdown, () => {
+        flashCopied(button, buttonText);
+      }, () => {
+        console.error('Failed to copy markdown');
+        alert('Failed to copy markdown. Please try selecting and copying manually.');
+      });
     }
-    
+
+    // Copy an individual code block to clipboard
     function copyCode(blockId) {
       const codeBlock = document.getElementById(blockId);
       const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
-      
+
       if (!codeBlock || !button) return;
-      
+
       // Get the text content without HTML tags
       const codeText = codeBlock.textContent || codeBlock.innerText;
-      
-      // Create a temporary textarea to copy from
-      const textarea = document.createElement('textarea');
-      textarea.value = codeText;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      
-      try {
-        // Select and copy the text
-        textarea.select();
-        document.execCommand('copy');
-        
-        // Update button state
-        button.classList.add('copied');
-        const copyText = button.querySelector('.copy-text');
-        const originalText = copyText.textContent;
-        copyText.textContent = 'Copied!';
-        
-        // Reset after 2 seconds
-        setTimeout(() => {
-          button.classList.remove('copied');
-          copyText.textContent = originalText;
-        }, 2000);
-      } catch (err) {
-        console.error('Failed to copy code:', err);
-      } finally {
-        document.body.removeChild(textarea);
-      }
+      const copyText = button.querySelector('.copy-text');
+
+      copyTextToClipboard(codeText, () => {
+        flashCopied(button, copyText);
+      }, () => {
+        console.error('Failed to copy code');
+      });
     }
-    
-    // Alternative modern copy method for browsers that support it
-    if (navigator.clipboard && window.isSecureContext) {
-      window.copyCode = function(blockId) {
-        const codeBlock = document.getElementById(blockId);
-        const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
-        
-        if (!codeBlock || !button) return;
-        
-        const codeText = codeBlock.textContent || codeBlock.innerText;
-        
-        navigator.clipboard.writeText(codeText).then(() => {
-          // Update button state
-          button.classList.add('copied');
-          const copyText = button.querySelector('.copy-text');
-          const originalText = copyText.textContent;
-          copyText.textContent = 'Copied!';
-          
-          // Reset after 2 seconds
-          setTimeout(() => {
-            button.classList.remove('copied');
-            copyText.textContent = originalText;
-          }, 2000);
-        }).catch(err => {
-          console.error('Failed to copy code:', err);
-        });
-      };
-    }
-    
+
     // Toggle between code and diagram view for Mermaid blocks
     function toggleMermaidView(mermaidId) {
       const codeView = document.getElementById(mermaidId + '-code');
@@ -2231,11 +2103,11 @@ async function renderMarkdownAsHTML(
  */
 function escapeHtml(unsafe: string): string {
   return unsafe
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 /**
@@ -2244,54 +2116,73 @@ function escapeHtml(unsafe: string): string {
  * and dangerous attributes (on*, javascript: URLs, data: URLs).
  */
 function sanitizeHtml(html: string): string {
-  // Remove dangerous tags entirely (including content for script/style)
-  html = html.replace(
-    /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
-    "",
-  );
-  html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, "");
+  // Apply the strip pass repeatedly until a fixpoint: a single pass can
+  // construct new dangerous markup from fragments (e.g. removing the inner
+  // tag of <scr<script></script>ipt> yields <script>). Every replacement
+  // strictly shrinks the string, so this terminates.
+  let previous: string;
+  do {
+    previous = html;
+    html = stripDangerousMarkup(html);
+  } while (html !== previous);
+  return html;
+}
 
-  // Remove dangerous self-closing/void tags
+/** Single sanitization pass used by sanitizeHtml's fixpoint loop. */
+function stripDangerousMarkup(html: string): string {
+  // Remove dangerous tags entirely, paired (including content) or stray.
+  // End tags may contain whitespace or attributes (</script foo>), so match
+  // <\/tag\b[^>]*> rather than a literal </tag>. svg/math open
+  // foreign-content parsing contexts where script execution is possible,
+  // so they are banned too.
   const dangerousTags = [
-    "iframe",
-    "object",
-    "embed",
-    "applet",
-    "form",
-    "input",
-    "textarea",
-    "select",
-    "button",
-    "link",
-    "meta",
-    "base",
+    'script',
+    'style',
+    'iframe',
+    'object',
+    'embed',
+    'applet',
+    'form',
+    'input',
+    'textarea',
+    'select',
+    'button',
+    'link',
+    'meta',
+    'base',
+    'svg',
+    'math',
   ];
   for (const tag of dangerousTags) {
     const openClose = new RegExp(
-      `<${tag}\\b[^<]*(?:(?!<\\/${tag}>)<[^<]*)*<\\/${tag}>`,
-      "gi",
+      `<${tag}\\b[^<]*(?:(?!<\\/${tag}\\b[^>]*>)<[^<]*)*<\\/${tag}\\b[^>]*>`,
+      'gi'
     );
-    html = html.replace(openClose, "");
-    const selfClose = new RegExp(`<${tag}\\b[^>]*\\/?>`, "gi");
-    html = html.replace(selfClose, "");
+    html = html.replace(openClose, '');
+    // Stray open, close, or self-closing tags without a matched pair
+    const single = new RegExp(`<\\/?${tag}\\b[^>]*>`, 'gi');
+    html = html.replace(single, '');
   }
 
-  // Remove event handler attributes (on*)
-  html = html.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+  // Remove event handler attributes (on*). The leading character may be
+  // whitespace, a quote closing the previous attribute value, or a slash,
+  // so capture and preserve it rather than requiring whitespace.
+  html = html.replace(/([\s"'/])on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
 
-  // Remove javascript: and vbscript: URLs in href/src/action attributes
-  html = html.replace(
-    /(href|src|action)\s*=\s*(?:"[^"]*javascript:[^"]*"|'[^']*javascript:[^']*')/gi,
-    '$1=""',
-  );
-  html = html.replace(
-    /(href|src|action)\s*=\s*(?:"[^"]*vbscript:[^"]*"|'[^']*vbscript:[^']*')/gi,
-    '$1=""',
-  );
-  html = html.replace(
-    /(href|src|action)\s*=\s*(?:"[^"]*data:[^"]*"|'[^']*data:[^']*')/gi,
-    '$1=""',
-  );
+  // Remove style attributes (CSS url(javascript:...) and similar vectors)
+  html = html.replace(/([\s"'/])style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '$1');
+
+  // Remove javascript:, vbscript:, and data: URLs in href/src/action
+  // attributes — quoted or unquoted
+  for (const scheme of ['javascript', 'vbscript', 'data']) {
+    html = html.replace(
+      new RegExp(
+        `(href|src|action)\\s*=\\s*(?:"[^"]*${scheme}:[^"]*"|'[^']*${scheme}:[^']*'|\\s*${scheme}:[^\\s>]*)`,
+        'gi'
+      ),
+      '$1=""'
+    );
+  }
 
   return html;
 }
@@ -2301,9 +2192,7 @@ function sanitizeHtml(html: string): string {
  * Escapes </script> and <!-- sequences that could break out of the script context.
  */
 function safeJsonEmbed(value: string): string {
-  return JSON.stringify(value)
-    .replace(/</g, "\\u003c")
-    .replace(/>/g, "\\u003e");
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
 }
 
 /**
@@ -2311,11 +2200,13 @@ function safeJsonEmbed(value: string): string {
  * Removes characters that could cause header injection.
  */
 function sanitizeFilename(filename: string): string {
-  // Remove path traversal, quotes, control characters, and newlines
+  // Replace quotes, control characters, and all path separators. Replacing
+  // separators (rather than deleting "../" sequences) means traversal
+  // sequences cannot survive or be reconstructed.
   return filename
-    .replace(/["\\\r\n]/g, "_")
-    .replace(/\.\.\//g, "")
-    .replace(/[^\x20-\x7E]/g, "_");
+    .replace(/["\r\n]/g, '_')
+    .replace(/[/\\]/g, '_')
+    .replace(/[^\x20-\x7E]/g, '_');
 }
 
 /**
@@ -2328,15 +2219,15 @@ function sanitizeFilename(filename: string): string {
 async function handleWebUpload(request: Request, env: Env): Promise<Response> {
   try {
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const oneTime = formData.get("oneTime") === "true";
+    const file = formData.get('file') as File;
+    const oneTime = formData.get('oneTime') === 'true';
 
     if (!file) {
-      return new Response(JSON.stringify({ error: "No file provided" }), {
+      return new Response(JSON.stringify({ error: 'No file provided' }), {
         status: 400,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
@@ -2352,10 +2243,10 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
         {
           status: 413,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": getCorsOrigin(request),
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': getCorsOrigin(request),
           },
-        },
+        }
       );
     }
 
@@ -2363,14 +2254,14 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
     const key = oneTime ? `${ONE_TIME_PREFIX}${id}` : id;
 
     const metadata: PasteMetadata = {
-      contentType: file.type || "application/octet-stream",
+      contentType: file.type || 'application/octet-stream',
       isOneTime: oneTime,
       createdAt: Date.now(),
       filename: file.name,
     };
 
     await env.PASTE_BUCKET.put(key, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     const url = `${new URL(request.url).origin}/${id}/${encodeURIComponent(file.name)}`;
@@ -2378,16 +2269,16 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ url, id }), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: "Upload failed" }), {
+    return new Response(JSON.stringify({ error: 'Upload failed' }), {
       status: 500,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }
@@ -2405,11 +2296,11 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     const { content, oneTime } = body;
 
     if (!content) {
-      return new Response(JSON.stringify({ error: "No content provided" }), {
+      return new Response(JSON.stringify({ error: 'No content provided' }), {
         status: 400,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": getCorsOrigin(request),
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': getCorsOrigin(request),
         },
       });
     }
@@ -2424,10 +2315,10 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
         {
           status: 413,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": getCorsOrigin(request),
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': getCorsOrigin(request),
           },
-        },
+        }
       );
     }
 
@@ -2435,14 +2326,14 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     const key = oneTime ? `${ONE_TIME_PREFIX}${id}` : id;
 
     const metadata: PasteMetadata = {
-      contentType: "text/plain",
+      contentType: 'text/plain',
       isOneTime: oneTime,
       createdAt: Date.now(),
-      filename: "paste.txt",
+      filename: 'paste.txt',
     };
 
     await env.PASTE_BUCKET.put(key, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     const url = `${new URL(request.url).origin}/${id}/paste.txt`;
@@ -2450,16 +2341,16 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     return new Response(JSON.stringify({ url, id }), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: "Upload failed" }), {
+    return new Response(JSON.stringify({ error: 'Upload failed' }), {
       status: 500,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }
@@ -2472,7 +2363,7 @@ async function handleWebDecrypt(
   id: string,
   env: Env,
   ctx: ExecutionContext,
-  request: Request,
+  request: Request
 ): Promise<Response> {
   // For now, just redirect to the regular GET handler
   // In the future, this would handle decryption with provided keys
@@ -2495,10 +2386,7 @@ function generateSessionId(): string {
 /**
  * Get upload session from KV storage.
  */
-async function getUploadSession(
-  env: Env,
-  sessionId: string,
-): Promise<UploadSession | null> {
+async function getUploadSession(env: Env, sessionId: string): Promise<UploadSession | null> {
   if (!env.UPLOAD_SESSIONS) {
     return null;
   }
@@ -2515,16 +2403,13 @@ async function getUploadSession(
 async function saveUploadSession(
   env: Env,
   sessionId: string,
-  session: UploadSession,
+  session: UploadSession
 ): Promise<void> {
   if (!env.UPLOAD_SESSIONS) {
-    throw new Error("UPLOAD_SESSIONS KV namespace not configured");
+    throw new Error('UPLOAD_SESSIONS KV namespace not configured');
   }
   // Set TTL to session expiration time
-  const ttlSeconds = Math.max(
-    60,
-    Math.floor((session.expiresAt - Date.now()) / 1000),
-  );
+  const ttlSeconds = Math.max(60, Math.floor((session.expiresAt - Date.now()) / 1000));
   await env.UPLOAD_SESSIONS.put(sessionId, JSON.stringify(session), {
     expirationTtl: ttlSeconds,
   });
@@ -2546,22 +2431,21 @@ async function deleteUploadSession(env: Env, sessionId: string): Promise<void> {
 async function handleMultipartInit(
   request: Request,
   env: Env,
-  isEncrypted: boolean,
+  isEncrypted: boolean
 ): Promise<Response> {
   // Check if UPLOAD_SESSIONS is configured
   if (!env.UPLOAD_SESSIONS) {
     return new Response(
       JSON.stringify({
-        error:
-          "Large file uploads not configured. UPLOAD_SESSIONS KV namespace required.",
+        error: 'Large file uploads not configured. UPLOAD_SESSIONS KV namespace required.',
       }),
       {
         status: 503,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      },
+      }
     );
   }
 
@@ -2580,16 +2464,15 @@ async function handleMultipartInit(
     if (!filename || !contentType || !totalSize || !totalParts) {
       return new Response(
         JSON.stringify({
-          error:
-            "Missing required fields: filename, contentType, totalSize, totalParts",
+          error: 'Missing required fields: filename, contentType, totalSize, totalParts',
         }),
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -2602,10 +2485,10 @@ async function handleMultipartInit(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -2616,11 +2499,11 @@ async function handleMultipartInit(
     // Create multipart upload in R2
     const multipartUpload = await env.PASTE_BUCKET.createMultipartUpload(key, {
       customMetadata: {
-        contentType: isEncrypted ? "application/json" : contentType,
+        contentType: isEncrypted ? 'application/json' : contentType,
         isOneTime: String(isOneTime),
         createdAt: String(Date.now()),
         filename: filename,
-        isMultipart: "true",
+        isMultipart: 'true',
       },
     });
 
@@ -2632,7 +2515,7 @@ async function handleMultipartInit(
       uploadId: multipartUpload.uploadId,
       key,
       filename,
-      contentType: isEncrypted ? "application/json" : contentType,
+      contentType: isEncrypted ? 'application/json' : contentType,
       totalSize,
       totalParts,
       uploadedParts: [],
@@ -2648,7 +2531,7 @@ async function handleMultipartInit(
 
     console.log(
       `[MULTIPART] Initialized upload session ${sessionId} for paste ${pasteId}, ` +
-        `size=${totalSize}, parts=${totalParts}, encrypted=${isEncrypted}, oneTime=${isOneTime}`,
+        `size=${totalSize}, parts=${totalParts}, encrypted=${isEncrypted}, oneTime=${isOneTime}`
     );
 
     const response: MultipartInitResponse = {
@@ -2661,22 +2544,19 @@ async function handleMultipartInit(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    console.error("[MULTIPART] Init error:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to initialize multipart upload" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    console.error('[MULTIPART] Init error:', error);
+    return new Response(JSON.stringify({ error: 'Failed to initialize multipart upload' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
 
@@ -2688,37 +2568,31 @@ async function handleMultipartPartUpload(
   request: Request,
   env: Env,
   sessionId: string,
-  partNumber: number,
+  partNumber: number
 ): Promise<Response> {
   try {
     // Get session
     const session = await getUploadSession(env, sessionId);
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: "Upload session not found or expired" }),
-        {
-          status: 404,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+      return new Response(JSON.stringify({ error: 'Upload session not found or expired' }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      );
+      });
     }
 
     // Check if session has expired
     if (Date.now() > session.expiresAt) {
       await deleteUploadSession(env, sessionId);
-      return new Response(
-        JSON.stringify({ error: "Upload session has expired" }),
-        {
-          status: 410,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+      return new Response(JSON.stringify({ error: 'Upload session has expired' }), {
+        status: 410,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      );
+      });
     }
 
     // Validate part number
@@ -2730,17 +2604,15 @@ async function handleMultipartPartUpload(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     // Check if part already uploaded
-    const existingPart = session.uploadedParts.find(
-      (p) => p.partNumber === partNumber,
-    );
+    const existingPart = session.uploadedParts.find((p) => p.partNumber === partNumber);
     if (existingPart) {
       // Return existing etag (idempotent)
       const response: PartUploadResponse = {
@@ -2750,29 +2622,20 @@ async function handleMultipartPartUpload(
       return new Response(JSON.stringify(response), {
         status: 200,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
       });
     }
 
     // Resume multipart upload in R2
-    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
-      session.key,
-      session.uploadId,
-    );
+    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(session.key, session.uploadId);
 
     // Get content length
-    const contentLength = parseInt(
-      request.headers.get("Content-Length") || "0",
-      10,
-    );
+    const contentLength = parseInt(request.headers.get('Content-Length') || '0', 10);
 
     // Validate minimum part size (except for last part)
-    if (
-      partNumber < session.totalParts &&
-      contentLength < LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE
-    ) {
+    if (partNumber < session.totalParts && contentLength < LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE) {
       return new Response(
         JSON.stringify({
           error: `Part size too small. Minimum is ${LARGE_FILE_CONSTANTS.MIN_CHUNK_SIZE / (1024 * 1024)}MB (except for last part)`,
@@ -2780,17 +2643,17 @@ async function handleMultipartPartUpload(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     // Upload the part - stream the request body directly to R2
     const uploadedPart = await multipartUpload.uploadPart(
       partNumber,
-      request.body as ReadableStream,
+      request.body as ReadableStream
     );
 
     // Update session with uploaded part
@@ -2808,7 +2671,7 @@ async function handleMultipartPartUpload(
 
     console.log(
       `[MULTIPART] Uploaded part ${partNumber}/${session.totalParts} for session ${sessionId}, ` +
-        `size=${contentLength}, etag=${uploadedPart.etag}`,
+        `size=${contentLength}, etag=${uploadedPart.etag}`
     );
 
     const response: PartUploadResponse = {
@@ -2819,20 +2682,17 @@ async function handleMultipartPartUpload(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    console.error(
-      `[MULTIPART] Part upload error for session ${sessionId}:`,
-      error,
-    );
-    return new Response(JSON.stringify({ error: "Failed to upload part" }), {
+    console.error(`[MULTIPART] Part upload error for session ${sessionId}:`, error);
+    return new Response(JSON.stringify({ error: 'Failed to upload part' }), {
       status: 500,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   }
@@ -2846,22 +2706,19 @@ async function handleMultipartComplete(
   request: Request,
   env: Env,
   sessionId: string,
-  isEncrypted: boolean,
+  isEncrypted: boolean
 ): Promise<Response> {
   try {
     // Get session
     const session = await getUploadSession(env, sessionId);
     if (!session) {
-      return new Response(
-        JSON.stringify({ error: "Upload session not found or expired" }),
-        {
-          status: 404,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+      return new Response(JSON.stringify({ error: 'Upload session not found or expired' }), {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      );
+      });
     }
 
     // Parse request body
@@ -2877,18 +2734,15 @@ async function handleMultipartComplete(
         {
           status: 400,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     // Resume multipart upload in R2
-    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
-      session.key,
-      session.uploadId,
-    );
+    const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(session.key, session.uploadId);
 
     // Complete the upload
     // Parts must be sorted by part number
@@ -2921,7 +2775,7 @@ async function handleMultipartComplete(
 
     console.log(
       `[MULTIPART] Completed upload for session ${sessionId}, paste=${pasteId}, ` +
-        `totalSize=${totalSize}, encrypted=${isEncrypted}`,
+        `totalSize=${totalSize}, encrypted=${isEncrypted}`
     );
 
     const response: MultipartCompleteResponse = {
@@ -2933,25 +2787,19 @@ async function handleMultipartComplete(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
-    console.error(
-      `[MULTIPART] Complete error for session ${sessionId}:`,
-      error,
-    );
-    return new Response(
-      JSON.stringify({ error: "Failed to complete multipart upload" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    console.error(`[MULTIPART] Complete error for session ${sessionId}:`, error);
+    return new Response(JSON.stringify({ error: 'Failed to complete multipart upload' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
 
@@ -2962,7 +2810,7 @@ async function handleMultipartComplete(
 async function handleMultipartAbort(
   request: Request,
   env: Env,
-  sessionId: string,
+  sessionId: string
 ): Promise<Response> {
   try {
     // Get session
@@ -2972,31 +2820,25 @@ async function handleMultipartAbort(
       return new Response(
         JSON.stringify({
           success: true,
-          message: "Session not found or already cleaned up",
+          message: 'Session not found or already cleaned up',
         }),
         {
           status: 200,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
     try {
       // Resume and abort the R2 multipart upload
-      const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(
-        session.key,
-        session.uploadId,
-      );
+      const multipartUpload = env.PASTE_BUCKET.resumeMultipartUpload(session.key, session.uploadId);
       await multipartUpload.abort();
     } catch (e) {
       // Ignore abort errors - upload may already be completed or aborted
-      console.log(
-        `[MULTIPART] Abort R2 upload warning for session ${sessionId}:`,
-        e,
-      );
+      console.log(`[MULTIPART] Abort R2 upload warning for session ${sessionId}:`, e);
     }
 
     // Delete session from KV
@@ -3007,28 +2849,25 @@ async function handleMultipartAbort(
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Upload session aborted and cleaned up",
+        message: 'Upload session aborted and cleaned up',
       }),
       {
         status: 200,
         headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
         },
-      },
+      }
     );
   } catch (error) {
     console.error(`[MULTIPART] Abort error for session ${sessionId}:`, error);
-    return new Response(
-      JSON.stringify({ error: "Failed to abort multipart upload" }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    return new Response(JSON.stringify({ error: 'Failed to abort multipart upload' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
 
@@ -3036,26 +2875,23 @@ async function handleMultipartAbort(
  * Get upload session status (for resume support).
  * GET /upload/:sessionId/status or GET /e/upload/:sessionId/status
  */
-async function handleMultipartStatus(
-  env: Env,
-  sessionId: string,
-): Promise<Response> {
+async function handleMultipartStatus(env: Env, sessionId: string): Promise<Response> {
   try {
     // Get session
     const session = await getUploadSession(env, sessionId);
     if (!session) {
       return new Response(
         JSON.stringify({
-          error: "Upload session not found or expired",
+          error: 'Upload session not found or expired',
           isValid: false,
         }),
         {
           status: 404,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -3065,16 +2901,16 @@ async function handleMultipartStatus(
       await deleteUploadSession(env, sessionId);
       return new Response(
         JSON.stringify({
-          error: "Upload session has expired",
+          error: 'Upload session has expired',
           isValid: false,
         }),
         {
           status: 410,
           headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*',
           },
-        },
+        }
       );
     }
 
@@ -3084,10 +2920,7 @@ async function handleMultipartStatus(
       : session.key;
 
     // Calculate uploaded bytes
-    const uploadedBytes = session.uploadedParts.reduce(
-      (sum, p) => sum + p.size,
-      0,
-    );
+    const uploadedBytes = session.uploadedParts.reduce((sum, p) => sum + p.size, 0);
 
     const response: UploadStatusResponse = {
       sessionId,
@@ -3103,21 +2936,18 @@ async function handleMultipartStatus(
     return new Response(JSON.stringify(response), {
       status: 200,
       headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
   } catch (error) {
     console.error(`[MULTIPART] Status error for session ${sessionId}:`, error);
-    return new Response(
-      JSON.stringify({ error: "Failed to get upload status", isValid: false }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+    return new Response(JSON.stringify({ error: 'Failed to get upload status', isValid: false }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
-    );
+    });
   }
 }
