@@ -21,6 +21,15 @@ import php from 'highlight.js/lib/languages/php';
 // Import MUI styles
 import { getHomepageHTML, getMuiCSS, getMarkdownStyles } from './muiStyles';
 
+// Import browser viewer templates
+import {
+  renderTextViewerPage,
+  renderEncryptedLandingPage,
+  renderOneTimeInterstitialPage,
+  renderErrorPage,
+  getHljsThemeStyles,
+} from './viewerTemplates';
+
 // Import analytics
 import { createAnalytics, WorkerAnalytics } from './analytics';
 
@@ -98,6 +107,211 @@ const ONE_TIME_PREFIX = 'onetime-';
 
 // Maximum upload size for standard (non-multipart) uploads: 25MB
 const MAX_STANDARD_UPLOAD_SIZE = 25 * 1024 * 1024;
+
+// Pastes larger than this skip server-side syntax highlighting (escaped <pre> only)
+const VIEWER_HIGHLIGHT_MAX_SIZE = 500 * 1024;
+
+// Pastes larger than this skip the HTML viewer entirely and stream raw bytes
+const VIEWER_MAX_SIZE = 5 * 1024 * 1024;
+
+// Map of filename extensions to registered highlight.js language names
+const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
+  js: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  jsx: 'javascript',
+  ts: 'typescript',
+  tsx: 'typescript',
+  py: 'python',
+  json: 'json',
+  xml: 'xml',
+  html: 'html',
+  htm: 'html',
+  svg: 'xml',
+  css: 'css',
+  md: 'markdown',
+  markdown: 'markdown',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  yml: 'yaml',
+  yaml: 'yaml',
+  sql: 'sql',
+  java: 'java',
+  c: 'cpp',
+  h: 'cpp',
+  cc: 'cpp',
+  cpp: 'cpp',
+  cxx: 'cpp',
+  hpp: 'cpp',
+  go: 'go',
+  rs: 'rust',
+  rb: 'ruby',
+  php: 'php',
+};
+
+// Map of content types to registered highlight.js language names
+const CONTENT_TYPE_LANGUAGE_MAP: Record<string, string> = {
+  'application/json': 'json',
+  'application/javascript': 'javascript',
+  'application/xml': 'xml',
+  'text/javascript': 'javascript',
+  'text/html': 'html',
+  'text/css': 'css',
+  'text/xml': 'xml',
+  'text/x-python': 'python',
+  'text/x-shellscript': 'bash',
+  'text/yaml': 'yaml',
+  'text/x-yaml': 'yaml',
+};
+
+/**
+ * Normalizes a string read from R2 custom metadata. Undefined values can be
+ * stringified to "undefined" on write, so treat those as empty.
+ */
+function cleanMetadataString(value: string | undefined): string {
+  if (!value || value === 'undefined' || value === 'null') {
+    return '';
+  }
+  return value;
+}
+
+/**
+ * Strips undefined values from a metadata object so they are not stringified
+ * to the literal "undefined" when stored as R2 custom metadata.
+ */
+function toCustomMetadata(metadata: PasteMetadata): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(metadata)) {
+    if (value !== undefined && value !== null) {
+      result[key] = String(value);
+    }
+  }
+  return result;
+}
+
+/**
+ * Determines whether the client is a browser expecting an HTML page.
+ * Browsers send Accept headers containing "text/html"; curl and node fetch
+ * default to "*\/*", so CLI/programmatic clients keep receiving raw content.
+ */
+function requestAcceptsHtml(request: Request): boolean {
+  return (request.headers.get('Accept') || '').includes('text/html');
+}
+
+/**
+ * Determines whether a content type is text-like and eligible for the
+ * universal browser text viewer.
+ */
+function isTextualContentType(contentType: string): boolean {
+  const ct = contentType.toLowerCase().split(';')[0].trim();
+  return (
+    ct.startsWith('text/') ||
+    ct === 'application/json' ||
+    ct === 'application/xml' ||
+    ct === 'application/javascript'
+  );
+}
+
+/**
+ * Picks a highlight.js language for a paste based on its filename extension,
+ * falling back to its content type. Returns null when unknown (auto-detect).
+ */
+function detectViewerLanguage(filename: string, contentType: string): string | null {
+  const extMatch = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (extMatch && EXTENSION_LANGUAGE_MAP[extMatch[1]]) {
+    return EXTENSION_LANGUAGE_MAP[extMatch[1]];
+  }
+  const ct = contentType.toLowerCase().split(';')[0].trim();
+  return CONTENT_TYPE_LANGUAGE_MAP[ct] || null;
+}
+
+/**
+ * Builds the universal text viewer HTML for a text-like paste, applying
+ * server-side syntax highlighting with safe fallbacks.
+ * @param textContent Decoded paste text
+ * @param pasteId Paste ID
+ * @param filename Filename for display/language detection (may be empty)
+ * @param contentType Stored content type
+ * @param sizeBytes Paste size in bytes
+ * @param isOneTime Whether the paste is one-time
+ */
+function buildTextViewerHtml(
+  textContent: string,
+  pasteId: string,
+  filename: string,
+  contentType: string,
+  sizeBytes: number,
+  isOneTime: boolean
+): string {
+  let highlightedHtml: string;
+  let language = 'plaintext';
+  const highlightingSkipped = sizeBytes > VIEWER_HIGHLIGHT_MAX_SIZE;
+
+  if (highlightingSkipped) {
+    highlightedHtml = escapeHtml(textContent);
+  } else {
+    try {
+      const knownLanguage = detectViewerLanguage(filename, contentType);
+      if (knownLanguage && hljs.getLanguage(knownLanguage)) {
+        highlightedHtml = hljs.highlight(textContent, {
+          language: knownLanguage,
+        }).value;
+        language = knownLanguage;
+      } else {
+        const result = hljs.highlightAuto(textContent);
+        highlightedHtml = result.value;
+        language = result.language || 'plaintext';
+      }
+    } catch (err) {
+      console.error(`[VIEWER] Syntax highlighting failed for ${pasteId}:`, err);
+      highlightedHtml = escapeHtml(textContent);
+      language = 'plaintext';
+    }
+  }
+
+  return renderTextViewerPage({
+    pasteId,
+    filename,
+    contentType,
+    sizeBytes,
+    highlightedHtml,
+    lineCount: textContent.split('\n').length,
+    language,
+    highlightingSkipped,
+    isOneTime,
+  });
+}
+
+/** Standard headers for browser-facing viewer HTML responses */
+function htmlViewerHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+    'CDN-Cache-Control': 'no-store',
+    'Surrogate-Control': 'no-store',
+    Pragma: 'no-cache',
+    Expires: '0',
+    ...extra,
+  };
+}
+
+/**
+ * Builds a "paste not found" response: a styled HTML page for browsers,
+ * plain text for CLI/programmatic clients.
+ */
+function notFoundResponse(
+  request: Request,
+  message = 'Paste not found - it may have expired or was a one-time paste that has already been viewed.'
+): Response {
+  if (requestAcceptsHtml(request)) {
+    return new Response(renderErrorPage({ title: 'Paste not found', message }), {
+      status: 404,
+      headers: htmlViewerHeaders(),
+    });
+  }
+  return new Response('Paste not found', { status: 404 });
+}
 
 // Allowed CORS origin (restrict from wildcard)
 const ALLOWED_ORIGIN = 'https://paste.d3d.dev';
@@ -358,12 +572,23 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
       // Track homepage view
       await analytics.trackHomepageView(request);
 
-      return new Response(generateHomepage(url.origin), {
+      return new Response(generateHomepage(), {
         headers: {
           'Content-Type': 'text/html',
           'Access-Control-Allow-Origin': '*',
         },
       });
+    }
+
+    if (requestAcceptsHtml(request)) {
+      return new Response(
+        renderErrorPage({
+          title: 'Page not found',
+          message:
+            'The page you requested does not exist. If you followed a paste link, it may have expired or was a one-time paste that has already been viewed.',
+        }),
+        { status: 404, headers: htmlViewerHeaders() }
+      );
     }
 
     return new Response('Not found', { status: 404 });
@@ -372,299 +597,11 @@ async function handleRequest(request: Request, env: Env, ctx: ExecutionContext):
   return new Response('Method not allowed', { status: 405 });
 }
 
-function generateHomepage(origin: string): string {
-  // Use the MUI styled homepage HTML
+/**
+ * Generates the homepage HTML using the MUI styled template.
+ */
+function generateHomepage(): string {
   return getHomepageHTML();
-  /* REMOVED TAILWIND HTML - Replaced with MUI version from muiStyles.ts
-<html lang="en">
-<head>
-  <title>DedPaste - Secure Pastebin Service</title>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="DedPaste - A secure pastebin service with end-to-end encryption, PGP integration, and CLI client">
-  <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap">
-</head>
-<body class="bg-dark-900 text-gray-100 min-h-screen">
-  <header class="border-b border-dark-700 py-6">
-    <div class="container mx-auto px-4 md:px-6">
-      <div class="flex items-center justify-between">
-        <h1 class="text-3xl md:text-4xl font-bold text-white">
-          <span class="text-primary-400">Ded</span>Paste
-        </h1>
-        <div class="flex items-center space-x-4">
-          <a href="https://github.com/anoncam/dedpaste" target="_blank" rel="noopener noreferrer" class="btn-secondary">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-5 h-5 mr-2">
-              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-            </svg>
-            GitHub
-          </a>
-          <a href="#install" class="btn-primary">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="w-5 h-5 mr-2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Install
-          </a>
-        </div>
-      </div>
-    </div>
-  </header>
-
-  <main class="container mx-auto px-4 md:px-6 py-8">
-    <section class="mb-16">
-      <div class="max-w-3xl mx-auto text-center mb-12">
-        <h2 class="text-3xl md:text-4xl font-bold text-white mb-4">Secure Pastebin with Advanced Encryption</h2>
-        <p class="text-xl text-gray-300">A powerful CLI tool for sharing text and files with end-to-end encryption, PGP support, and one-time pastes.</p>
-      </div>
-
-      <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">End-to-End Encryption</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Keep Your Content Private</h3>
-          <p class="text-gray-300">All encryption happens client-side. The server never sees your unencrypted content or keys.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">PGP Integration</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Use Your Existing Keys</h3>
-          <p class="text-gray-300">Leverage PGP keys from keyservers, GPG keyring, or Keybase for trusted communications.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">One-Time Pastes</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Self-Destructing Content</h3>
-          <p class="text-gray-300">Create pastes that automatically delete after being viewed once.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">Binary Support</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Beyond Just Text</h3>
-          <p class="text-gray-300">Upload and share binary files with proper content type detection.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">Friend-to-Friend</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Secure Sharing</h3>
-          <p class="text-gray-300">Easily manage keys for your friends and encrypt content specifically for them.</p>
-        </div>
-        
-        <div class="card">
-          <div class="mb-4">
-            <span class="feature-tag">CLI Power</span>
-          </div>
-          <h3 class="text-xl font-semibold text-white mb-2">Advanced Scripting</h3>
-          <p class="text-gray-300">Command-line interface for easy integration with your existing scripts and workflows.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="install" class="mb-16">
-      <div class="max-w-3xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Installation</h2>
-        
-        <div class="mb-8">
-          <h3 class="text-xl font-semibold text-white mb-4">Using npm (recommended)</h3>
-          <pre><code>npm install -g dedpaste</code></pre>
-        </div>
-        
-        <div class="mb-8">
-          <h3 class="text-xl font-semibold text-white mb-4">From source</h3>
-          <pre><code>git clone https://github.com/anoncam/dedpaste.git
-cd dedpaste
-npm install
-npm link</code></pre>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-16">
-      <div class="max-w-4xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Quick Start Examples</h2>
-        
-        <div class="grid md:grid-cols-2 gap-6 mb-8">
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Basic Usage</h3>
-            <pre><code># Create a paste from stdin
-echo "Hello, World!" | dedpaste
-
-# Create a paste from a file
-dedpaste < file.txt
-
-# Create a one-time paste
-echo "Secret content" | dedpaste --temp
-
-# Specify file explicitly
-dedpaste --file path/to/file.txt</code></pre>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Encryption</h3>
-            <pre><code># Generate your key pair first
-dedpaste keys --gen-key
-
-# Create encrypted paste
-echo "Secret data" | dedpaste --encrypt
-
-# Encrypt for a friend
-echo "For Alice" | dedpaste send --encrypt --for alice
-
-# Use PGP encryption
-echo "PGP Secret" | dedpaste send --encrypt --for user@example.com --pgp</code></pre>
-          </div>
-        </div>
-        
-        <div class="grid md:grid-cols-2 gap-6">
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Key Management</h3>
-            <pre><code># Enhanced interactive key management (recommended)
-dedpaste keys:enhanced
-
-# List all your keys
-dedpaste keys --list
-
-# Add a friend's public key
-dedpaste keys --add-friend alice --key-file alice.pem
-
-# Add a PGP key from keyservers
-dedpaste keys --pgp-key user@example.com
-
-# Add a Keybase user's key
-dedpaste keys --keybase username</code></pre>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Retrieving Pastes</h3>
-            <pre><code># Get and display a paste
-dedpaste get https://paste.d3d.dev/AbCdEfGh
-
-# Get and decrypt an encrypted paste
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh
-
-# Use a specific key file
-dedpaste get https://paste.d3d.dev/e/AbCdEfGh --key-file private.pem</code></pre>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-16">
-      <div class="max-w-4xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">Troubleshooting</h2>
-        
-        <div class="space-y-6">
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Common PGP Errors</h3>
-            <div class="space-y-4">
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: PGP encryption requires a recipient</p>
-                <p class="text-gray-300">Always specify a recipient when using PGP encryption:</p>
-                <pre><code>echo "secret" | dedpaste send --encrypt --for user@example.com --pgp</code></pre>
-              </div>
-              
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: Failed to find PGP key for recipient</p>
-                <p class="text-gray-300">Make sure you've added the recipient's PGP key first:</p>
-                <pre><code>dedpaste keys --pgp-key user@example.com</code></pre>
-              </div>
-            </div>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">Key Management Issues</h3>
-            <div class="space-y-4">
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: No personal key found</p>
-                <p class="text-gray-300">Generate your key pair first:</p>
-                <pre><code>dedpaste keys --gen-key</code></pre>
-              </div>
-              
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: Friend not found in key database</p>
-                <p class="text-gray-300">Add the friend's key before encrypting for them:</p>
-                <pre><code>dedpaste keys --add-friend name --key-file path/to/key.pem</code></pre>
-              </div>
-            </div>
-          </div>
-          
-          <div class="card">
-            <h3 class="text-xl font-semibold text-white mb-4">CLI Parameter Issues</h3>
-            <div class="space-y-4">
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: File not found with --file flag</p>
-                <p class="text-gray-300">Double-check the file path and use quotes for paths with spaces:</p>
-                <pre><code>dedpaste --file "path/to/my file.txt"</code></pre>
-              </div>
-              
-              <div>
-                <p class="text-danger font-semibold mb-1">Error: --for is required when using --pgp</p>
-                <p class="text-gray-300">PGP encryption always requires specifying a recipient:</p>
-                <pre><code>dedpaste send --encrypt --for recipient@example.com --pgp</code></pre>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="mb-16">
-      <div class="max-w-3xl mx-auto">
-        <h2 class="text-2xl md:text-3xl font-bold text-white mb-6 pb-2 border-b border-dark-700">API Usage</h2>
-        
-        <pre><code># Post content
-curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${origin}/upload
-
-# Post one-time content
-curl -X POST -H "Content-Type: text/plain" --data "Your content here" ${origin}/temp
-
-# Post encrypted content (client-side encryption)
-curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${origin}/e/upload
-
-# Post encrypted one-time content
-curl -X POST -H "Content-Type: text/plain" --data "Your encrypted content" ${origin}/e/temp
-
-# Get content
-curl ${origin}/{paste-id}
-
-# Get encrypted content (requires client-side decryption)
-curl ${origin}/e/{paste-id}</code></pre>
-      </div>
-    </section>
-  </main>
-
-  <footer class="bg-dark-800 border-t border-dark-700 py-8">
-    <div class="container mx-auto px-4 md:px-6">
-      <div class="grid md:grid-cols-2 gap-8">
-        <div>
-          <h3 class="text-xl font-semibold text-white mb-4">DedPaste</h3>
-          <p class="text-gray-300 mb-4">A secure pastebin service with end-to-end encryption and advanced PGP integration.</p>
-          <p class="text-gray-400">&copy; ${new Date().getFullYear()} - ISC License</p>
-        </div>
-        
-        <div>
-          <h3 class="text-xl font-semibold text-white mb-4">Resources</h3>
-          <ul class="space-y-2">
-            <li><a href="https://github.com/anoncam/dedpaste" class="text-primary-400 hover:text-primary-300">GitHub Repository</a></li>
-            <li><a href="https://github.com/anoncam/dedpaste/issues" class="text-primary-400 hover:text-primary-300">Report Issues</a></li>
-            <li><a href="https://github.com/anoncam/dedpaste#contributing" class="text-primary-400 hover:text-primary-300">Contributing Guide</a></li>
-            <li><a href="https://www.npmjs.com/package/dedpaste" class="text-primary-400 hover:text-primary-300">NPM Package</a></li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  */
 }
 
 async function handleUpload(
@@ -730,7 +667,7 @@ async function handleUpload(
 
     // Store the content in R2 with the prefixed key
     await env.PASTE_BUCKET.put(storageKey, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     console.log(
@@ -751,7 +688,7 @@ async function handleUpload(
 
     // Store the content in R2 with metadata
     await env.PASTE_BUCKET.put(id, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     console.log(
@@ -810,6 +747,12 @@ async function handleGet(
   // Check for raw parameter to bypass markdown rendering
   const url = new URL(request.url);
   const wantsRaw = url.searchParams.get('raw') === 'true';
+  // download=true forces a Content-Disposition: attachment on raw responses
+  const wantsDownload = url.searchParams.get('download') === 'true';
+  // confirm=true acknowledges the one-time interstitial and consumes the paste
+  const confirmedOneTime = url.searchParams.get('confirm') === 'true';
+  // Browser clients (Accept: text/html) get HTML viewer pages unless raw was requested
+  const wantsBrowserView = requestAcceptsHtml(request) && !wantsRaw;
   // First, check if this is a one-time paste by trying to get it with the one-time prefix
   const oneTimeKey = `${ONE_TIME_PREFIX}${id}`;
   console.log(
@@ -834,6 +777,22 @@ async function handleGet(
         // Ignore errors
       }
 
+      if (requestAcceptsHtml(request)) {
+        return new Response(
+          renderErrorPage({
+            title: 'Paste not found',
+            message: 'This one-time paste has already been viewed and is no longer available.',
+          }),
+          {
+            status: 404,
+            headers: htmlViewerHeaders({
+              'X-One-Time': 'true',
+              'X-Already-Viewed': 'true',
+            }),
+          }
+        );
+      }
+
       return new Response(
         'This one-time paste has already been viewed and is no longer available.',
         {
@@ -848,6 +807,45 @@ async function handleGet(
             'X-Already-Viewed': 'true',
           },
         }
+      );
+    }
+
+    // For browser page loads, never consume the paste immediately.
+    // Encrypted one-time pastes get the encrypted landing page; all others
+    // get a confirmation interstitial whose reveal button re-requests the
+    // paste with ?confirm=true&raw=true (that request runs the normal
+    // consume-and-delete flow below). Link-preview bots don't execute JS,
+    // so they can no longer burn one-time pastes before the recipient.
+    if (wantsBrowserView && (isEncrypted || !confirmedOneTime)) {
+      let metaContentType = 'text/plain';
+      let metaFilename = '';
+      try {
+        const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
+        metaContentType = cleanMetadataString(metadata.contentType) || 'text/plain';
+        metaFilename = cleanMetadataString(metadata.filename);
+      } catch (err) {
+        console.error(`[TEMP PASTE] Error reading metadata for interstitial ${id}: ${err}`);
+      }
+
+      if (isEncrypted) {
+        return new Response(
+          renderEncryptedLandingPage({
+            pasteId: id,
+            pasteUrl: `${url.origin}/e/${id}`,
+            isOneTime: true,
+          }),
+          { headers: htmlViewerHeaders({ 'X-One-Time': 'true' }) }
+        );
+      }
+
+      return new Response(
+        renderOneTimeInterstitialPage({
+          pasteId: id,
+          filename: urlFilename || metaFilename,
+          contentType: metaContentType,
+          sizeBytes: oneTimePaste.size,
+        }),
+        { headers: htmlViewerHeaders({ 'X-One-Time': 'true' }) }
       );
     }
 
@@ -876,8 +874,8 @@ async function handleGet(
 
     try {
       const metadata = oneTimePaste.customMetadata as unknown as PasteMetadata;
-      contentType = metadata.contentType || 'text/plain';
-      filename = metadata.filename || '';
+      contentType = cleanMetadataString(metadata.contentType) || 'text/plain';
+      filename = cleanMetadataString(metadata.filename);
       console.log(`[TEMP PASTE] Content type from metadata: ${contentType}, filename: ${filename}`);
     } catch (err) {
       console.error(`[TEMP PASTE] Error retrieving metadata for one-time paste ${id}: ${err}`);
@@ -1030,11 +1028,40 @@ async function handleGet(
       });
     }
 
-    // Determine if content should be displayed inline or downloaded
-    const isViewableInBrowser = isViewableContentType(contentType);
-    const disposition = isViewableInBrowser ? 'inline' : 'attachment';
     const effectiveFilename =
       urlFilename || filename || `${id}${getExtensionForContentType(contentType)}`;
+
+    // Universal text viewer for browsers that confirmed the interstitial
+    // (direct navigation to ?confirm=true; the interstitial's JS fetch
+    // requests raw content instead, so it never reaches this branch)
+    if (
+      wantsBrowserView &&
+      !isEncrypted &&
+      isTextualContentType(contentType) &&
+      content.byteLength <= VIEWER_MAX_SIZE
+    ) {
+      const textContent = new TextDecoder().decode(content);
+      const viewerHtml = buildTextViewerHtml(
+        textContent,
+        id,
+        effectiveFilename,
+        contentType,
+        content.byteLength,
+        true
+      );
+
+      return new Response(viewerHtml, {
+        headers: htmlViewerHeaders({
+          'X-Original-Content-Type': contentType,
+          'X-One-Time': 'true',
+          'X-Paste-Viewed-At': new Date().toISOString(),
+        }),
+      });
+    }
+
+    // Determine if content should be displayed inline or downloaded
+    const isViewableInBrowser = isViewableContentType(contentType);
+    const disposition = wantsDownload || !isViewableInBrowser ? 'attachment' : 'inline';
 
     // Return the content with stronger cache control headers
     return new Response(content, {
@@ -1059,7 +1086,7 @@ async function handleGet(
   const paste = await env.PASTE_BUCKET.get(id);
 
   if (!paste) {
-    return new Response('Paste not found', { status: 404 });
+    return notFoundResponse(request);
   }
 
   // Regular paste - get metadata (available without reading the body)
@@ -1068,8 +1095,8 @@ async function handleGet(
 
   try {
     const metadata = paste.customMetadata as unknown as PasteMetadata;
-    contentType = metadata.contentType || 'text/plain';
-    filename = metadata.filename || '';
+    contentType = cleanMetadataString(metadata.contentType) || 'text/plain';
+    filename = cleanMetadataString(metadata.filename);
     console.log(
       `[REGULAR PASTE] Content type from metadata: ${contentType}, filename: ${filename}`
     );
@@ -1088,6 +1115,20 @@ async function handleGet(
       `[REGULAR PASTE] Overriding content type for encrypted paste from ${contentType} to application/json`
     );
     contentType = 'application/json';
+  }
+
+  // Encrypted pastes: browsers get a landing page explaining client-side
+  // decryption via the CLI; CLI/curl clients (and ?raw=true) keep receiving
+  // the raw ciphertext JSON exactly as before.
+  if (isEncrypted && wantsBrowserView) {
+    return new Response(
+      renderEncryptedLandingPage({
+        pasteId: id,
+        pasteUrl: `${url.origin}/e/${id}`,
+        isOneTime: false,
+      }),
+      { headers: htmlViewerHeaders({ 'X-Encrypted': 'true' }) }
+    );
   }
 
   // Check if this is markdown content that should be rendered as HTML
@@ -1116,9 +1157,36 @@ async function handleGet(
     });
   }
 
+  // Universal text viewer: browsers get a styled, syntax-highlighted page
+  // for any text-like paste. CLI/curl clients and ?raw=true requests keep
+  // receiving the raw bytes. Very large pastes fall through to raw streaming.
+  if (
+    wantsBrowserView &&
+    !isEncrypted &&
+    isTextualContentType(contentType) &&
+    paste.size <= VIEWER_MAX_SIZE
+  ) {
+    const content = await paste.arrayBuffer();
+    const textContent = new TextDecoder().decode(content);
+    const viewerHtml = buildTextViewerHtml(
+      textContent,
+      id,
+      effectiveFilename,
+      contentType,
+      content.byteLength,
+      false
+    );
+
+    return new Response(viewerHtml, {
+      headers: htmlViewerHeaders({
+        'X-Original-Content-Type': contentType,
+      }),
+    });
+  }
+
   // Determine if content should be displayed inline or downloaded
   const isViewableInBrowser = isViewableContentType(contentType);
-  const disposition = isViewableInBrowser ? 'inline' : 'attachment';
+  const disposition = wantsDownload || !isViewableInBrowser ? 'attachment' : 'inline';
 
   // Stream the R2 object body directly to avoid buffering large files in memory.
   // This is critical for multipart-uploaded files which can be up to 5GB.
@@ -1533,99 +1601,9 @@ async function renderMarkdownAsHTML(
       color: #f3f4f6;
     }
     
-    /* Highlight.js theme - GitHub Dark */
-    .hljs {
-      color: #e1e4e8;
-      background: #18171c;
-    }
-    
-    .hljs-doctag,
-    .hljs-keyword,
-    .hljs-meta .hljs-keyword,
-    .hljs-template-tag,
-    .hljs-template-variable,
-    .hljs-type,
-    .hljs-variable.language_ {
-      color: #ff7b72;
-    }
-    
-    .hljs-title,
-    .hljs-title.class_,
-    .hljs-title.class_.inherited__,
-    .hljs-title.function_ {
-      color: #d2a8ff;
-    }
-    
-    .hljs-attr,
-    .hljs-attribute,
-    .hljs-literal,
-    .hljs-meta,
-    .hljs-number,
-    .hljs-operator,
-    .hljs-selector-attr,
-    .hljs-selector-class,
-    .hljs-selector-id,
-    .hljs-variable {
-      color: #79c0ff;
-    }
-    
-    .hljs-meta .hljs-string,
-    .hljs-regexp,
-    .hljs-string {
-      color: #a5d6ff;
-    }
-    
-    .hljs-built_in,
-    .hljs-symbol {
-      color: #ffa657;
-    }
-    
-    .hljs-code,
-    .hljs-comment,
-    .hljs-formula {
-      color: #8b949e;
-    }
-    
-    .hljs-name,
-    .hljs-quote,
-    .hljs-selector-pseudo,
-    .hljs-selector-tag {
-      color: #7ee83f;
-    }
-    
-    .hljs-subst {
-      color: #e1e4e8;
-    }
-    
-    .hljs-section {
-      color: #1f6feb;
-      font-weight: bold;
-    }
-    
-    .hljs-bullet {
-      color: #f2cc60;
-    }
-    
-    .hljs-emphasis {
-      color: #e1e4e8;
-      font-style: italic;
-    }
-    
-    .hljs-strong {
-      color: #e1e4e8;
-      font-weight: bold;
-    }
-    
-    .hljs-addition {
-      color: #aff5b4;
-      background-color: #033a16;
-    }
-    
-    .hljs-deletion {
-      color: #ffdcd7;
-      background-color: #67060c;
-    }
-    
+    /* Highlight.js theme - GitHub Dark (shared with the text viewer) */
+    ${getHljsThemeStyles()}
+
     .markdown-content blockquote {
       border-left: 4px solid #8f8fff;
       padding-left: 1rem;
@@ -1853,7 +1831,7 @@ async function renderMarkdownAsHTML(
 <body>
   <header class="header">
     <div class="header-title">
-      <span class="brand">Ded</span>Paste - Markdown Viewer
+      <span class="brand">Ded</span>Paste &middot; ${escapeHtml(title)}
     </div>
     <div class="paste-info">
       ${filename ? `<span>📄 ${escapeHtml(filename)}</span>` : ''}
@@ -1891,122 +1869,80 @@ async function renderMarkdownAsHTML(
   <script>
     // Store the original markdown content
     const originalMarkdown = ${safeJsonEmbed(markdownContent)};
-    
+
+    // Legacy clipboard fallback using a hidden textarea + execCommand
+    function legacyCopy(text) {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.top = '-9999px';
+      document.body.appendChild(textarea);
+      let ok = false;
+      try {
+        textarea.select();
+        ok = document.execCommand('copy');
+      } catch (err) {
+        ok = false;
+      }
+      document.body.removeChild(textarea);
+      return ok;
+    }
+
+    // Copy helper: navigator.clipboard first, execCommand fallback
+    function copyTextToClipboard(text, onSuccess, onFailure) {
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+          if (legacyCopy(text)) { onSuccess(); } else { onFailure(); }
+        });
+      } else if (legacyCopy(text)) {
+        onSuccess();
+      } else {
+        onFailure();
+      }
+    }
+
+    // Briefly flips a button into its "copied" state
+    function flashCopied(button, label) {
+      const originalText = label.textContent;
+      button.classList.add('copied');
+      label.textContent = 'Copied!';
+      setTimeout(() => {
+        button.classList.remove('copied');
+        label.textContent = originalText;
+      }, 2000);
+    }
+
     // Copy all markdown source to clipboard
     function copyAllMarkdown() {
       const button = document.querySelector('.copy-all-button');
       const buttonText = button.querySelector('.copy-all-text');
-      const originalText = buttonText.textContent;
-      
-      // Create a temporary textarea to copy from
-      const textarea = document.createElement('textarea');
-      textarea.value = originalMarkdown;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      
-      try {
-        // Select and copy the text
-        textarea.select();
-        document.execCommand('copy');
-        
-        // Update button state
-        button.classList.add('copied');
-        buttonText.textContent = 'Copied!';
-        
-        // Reset after 2 seconds
-        setTimeout(() => {
-          button.classList.remove('copied');
-          buttonText.textContent = originalText;
-        }, 2000);
-      } catch (err) {
-        console.error('Failed to copy markdown:', err);
-        // Try modern clipboard API as fallback
-        if (navigator.clipboard && window.isSecureContext) {
-          navigator.clipboard.writeText(originalMarkdown).then(() => {
-            button.classList.add('copied');
-            buttonText.textContent = 'Copied!';
-            setTimeout(() => {
-              button.classList.remove('copied');
-              buttonText.textContent = originalText;
-            }, 2000);
-          }).catch(err => {
-            console.error('Clipboard API also failed:', err);
-            alert('Failed to copy markdown. Please try selecting and copying manually.');
-          });
-        }
-      } finally {
-        document.body.removeChild(textarea);
-      }
+
+      copyTextToClipboard(originalMarkdown, () => {
+        flashCopied(button, buttonText);
+      }, () => {
+        console.error('Failed to copy markdown');
+        alert('Failed to copy markdown. Please try selecting and copying manually.');
+      });
     }
-    
+
+    // Copy an individual code block to clipboard
     function copyCode(blockId) {
       const codeBlock = document.getElementById(blockId);
       const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
-      
+
       if (!codeBlock || !button) return;
-      
+
       // Get the text content without HTML tags
       const codeText = codeBlock.textContent || codeBlock.innerText;
-      
-      // Create a temporary textarea to copy from
-      const textarea = document.createElement('textarea');
-      textarea.value = codeText;
-      textarea.style.position = 'fixed';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      
-      try {
-        // Select and copy the text
-        textarea.select();
-        document.execCommand('copy');
-        
-        // Update button state
-        button.classList.add('copied');
-        const copyText = button.querySelector('.copy-text');
-        const originalText = copyText.textContent;
-        copyText.textContent = 'Copied!';
-        
-        // Reset after 2 seconds
-        setTimeout(() => {
-          button.classList.remove('copied');
-          copyText.textContent = originalText;
-        }, 2000);
-      } catch (err) {
-        console.error('Failed to copy code:', err);
-      } finally {
-        document.body.removeChild(textarea);
-      }
+      const copyText = button.querySelector('.copy-text');
+
+      copyTextToClipboard(codeText, () => {
+        flashCopied(button, copyText);
+      }, () => {
+        console.error('Failed to copy code');
+      });
     }
-    
-    // Alternative modern copy method for browsers that support it
-    if (navigator.clipboard && window.isSecureContext) {
-      window.copyCode = function(blockId) {
-        const codeBlock = document.getElementById(blockId);
-        const button = document.querySelector(\`button[data-code-id="\${blockId}"]\`);
-        
-        if (!codeBlock || !button) return;
-        
-        const codeText = codeBlock.textContent || codeBlock.innerText;
-        
-        navigator.clipboard.writeText(codeText).then(() => {
-          // Update button state
-          button.classList.add('copied');
-          const copyText = button.querySelector('.copy-text');
-          const originalText = copyText.textContent;
-          copyText.textContent = 'Copied!';
-          
-          // Reset after 2 seconds
-          setTimeout(() => {
-            button.classList.remove('copied');
-            copyText.textContent = originalText;
-          }, 2000);
-        }).catch(err => {
-          console.error('Failed to copy code:', err);
-        });
-      };
-    }
-    
+
     // Toggle between code and diagram view for Mermaid blocks
     function toggleMermaidView(mermaidId) {
       const codeView = document.getElementById(mermaidId + '-code');
@@ -2295,7 +2231,7 @@ async function handleWebUpload(request: Request, env: Env): Promise<Response> {
     };
 
     await env.PASTE_BUCKET.put(key, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     const url = `${new URL(request.url).origin}/${id}/${encodeURIComponent(file.name)}`;
@@ -2367,7 +2303,7 @@ async function handleTextUpload(request: Request, env: Env): Promise<Response> {
     };
 
     await env.PASTE_BUCKET.put(key, content, {
-      customMetadata: metadata as any,
+      customMetadata: toCustomMetadata(metadata),
     });
 
     const url = `${new URL(request.url).origin}/${id}/paste.txt`;
