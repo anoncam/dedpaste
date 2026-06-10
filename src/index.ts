@@ -2130,14 +2130,11 @@ function sanitizeHtml(html: string): string {
 
 /** Single sanitization pass used by sanitizeHtml's fixpoint loop. */
 function stripDangerousMarkup(html: string): string {
-  // Remove dangerous tags entirely (including content for script/style).
+  // Remove dangerous tags entirely, paired (including content) or stray.
   // End tags may contain whitespace or attributes (</script foo>), so match
-  // <\/tag\b[^>]*> rather than a literal </tag>.
-  html = html.replace(/<script\b[^<]*(?:(?!<\/script\b[^>]*>)<[^<]*)*<\/script\b[^>]*>/gi, '');
-  html = html.replace(/<style\b[^<]*(?:(?!<\/style\b[^>]*>)<[^<]*)*<\/style\b[^>]*>/gi, '');
-
-  // Remove dangerous self-closing/void tags. svg/math open foreign-content
-  // parsing contexts where script execution is possible, so they are banned too.
+  // <\/tag\b[^>]*> rather than a literal </tag>. svg/math open
+  // foreign-content parsing contexts where script execution is possible,
+  // so they are banned too.
   const dangerousTags = [
     'script',
     'style',
