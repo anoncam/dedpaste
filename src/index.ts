@@ -2116,13 +2116,31 @@ function escapeHtml(unsafe: string): string {
  * and dangerous attributes (on*, javascript: URLs, data: URLs).
  */
 function sanitizeHtml(html: string): string {
-  // Remove dangerous tags entirely (including content for script/style)
-  html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-  html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+  // Apply the strip pass repeatedly until a fixpoint: a single pass can
+  // construct new dangerous markup from fragments (e.g. removing the inner
+  // tag of <scr<script></script>ipt> yields <script>). Every replacement
+  // strictly shrinks the string, so this terminates.
+  let previous: string;
+  do {
+    previous = html;
+    html = stripDangerousMarkup(html);
+  } while (html !== previous);
+  return html;
+}
+
+/** Single sanitization pass used by sanitizeHtml's fixpoint loop. */
+function stripDangerousMarkup(html: string): string {
+  // Remove dangerous tags entirely (including content for script/style).
+  // End tags may contain whitespace or attributes (</script foo>), so match
+  // <\/tag\b[^>]*> rather than a literal </tag>.
+  html = html.replace(/<script\b[^<]*(?:(?!<\/script\b[^>]*>)<[^<]*)*<\/script\b[^>]*>/gi, '');
+  html = html.replace(/<style\b[^<]*(?:(?!<\/style\b[^>]*>)<[^<]*)*<\/style\b[^>]*>/gi, '');
 
   // Remove dangerous self-closing/void tags. svg/math open foreign-content
   // parsing contexts where script execution is possible, so they are banned too.
   const dangerousTags = [
+    'script',
+    'style',
     'iframe',
     'object',
     'embed',
@@ -2139,10 +2157,14 @@ function sanitizeHtml(html: string): string {
     'math',
   ];
   for (const tag of dangerousTags) {
-    const openClose = new RegExp(`<${tag}\\b[^<]*(?:(?!<\\/${tag}>)<[^<]*)*<\\/${tag}>`, 'gi');
+    const openClose = new RegExp(
+      `<${tag}\\b[^<]*(?:(?!<\\/${tag}\\b[^>]*>)<[^<]*)*<\\/${tag}\\b[^>]*>`,
+      'gi'
+    );
     html = html.replace(openClose, '');
-    const selfClose = new RegExp(`<${tag}\\b[^>]*\\/?>`, 'gi');
-    html = html.replace(selfClose, '');
+    // Stray open, close, or self-closing tags without a matched pair
+    const single = new RegExp(`<\\/?${tag}\\b[^>]*>`, 'gi');
+    html = html.replace(single, '');
   }
 
   // Remove event handler attributes (on*). The leading character may be
@@ -2181,10 +2203,12 @@ function safeJsonEmbed(value: string): string {
  * Removes characters that could cause header injection.
  */
 function sanitizeFilename(filename: string): string {
-  // Remove path traversal, quotes, control characters, and newlines
+  // Replace quotes, control characters, and all path separators. Replacing
+  // separators (rather than deleting "../" sequences) means traversal
+  // sequences cannot survive or be reconstructed.
   return filename
-    .replace(/["\\\r\n]/g, '_')
-    .replace(/\.\.\//g, '')
+    .replace(/["\r\n]/g, '_')
+    .replace(/[/\\]/g, '_')
     .replace(/[^\x20-\x7E]/g, '_');
 }
 
