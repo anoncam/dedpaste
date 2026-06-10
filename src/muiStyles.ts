@@ -2,14 +2,38 @@
 // Since we can't use React components in a Cloudflare Worker,
 // we'll create CSS classes that follow MUI's design system
 
-export const getMuiCSS = () => `
+/**
+ * Package version displayed in the homepage footer.
+ *
+ * NOTE: kept as a constant instead of `import packageJson from "../package.json"`
+ * because pulling package.json into the tsc program shifts the computed rootDir
+ * to the repo root, emitting `dist/src/index.js` instead of `dist/index.js` and
+ * breaking the `main = "dist/index.js"` entry in wrangler.toml. Keep in sync
+ * with package.json (currently bumped by `npm version`).
+ */
+const PACKAGE_VERSION = '1.24.8';
+
+/** Google Fonts stylesheet shared by every server-rendered page. */
+const GOOGLE_FONTS_URL =
+  'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap';
+
+/**
+ * Base MUI-flavored CSS.
+ *
+ * @param includeFontImport - When true (default) the Google Fonts "@import"
+ *   is embedded so existing consumers that inline this CSS keep loading
+ *   Roboto. Pages that load the fonts via <link> tags in their <head>
+ *   (e.g. the homepage) should pass false to avoid a render-blocking
+ *   double-fetch.
+ */
+export const getMuiCSS = (includeFontImport = true) => `
   /* MUI Reset and Base Styles */
   *, *::before, *::after {
     box-sizing: border-box;
   }
 
   /* MUI Typography */
-  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Roboto+Mono:wght@400;500&display=swap');
+  ${includeFontImport ? `@import url('${GOOGLE_FONTS_URL}');` : ''}
 
   :root {
     /* MUI Dark Theme Colors */
@@ -70,9 +94,9 @@ export const getMuiCSS = () => `
     color: var(--mui-palette-text-primary);
   }
 
-  /* Typography Classes */
+  /* Typography Classes (h1-h3 use clamp() so headings scale down on phones) */
   .MuiTypography-h1 {
-    font-size: 6rem;
+    font-size: clamp(2.75rem, 7vw + 1rem, 6rem);
     font-weight: 300;
     line-height: 1.167;
     letter-spacing: -0.01562em;
@@ -80,7 +104,7 @@ export const getMuiCSS = () => `
   }
 
   .MuiTypography-h2 {
-    font-size: 3.75rem;
+    font-size: clamp(2rem, 4.5vw + 0.75rem, 3.75rem);
     font-weight: 300;
     line-height: 1.2;
     letter-spacing: -0.00833em;
@@ -88,7 +112,7 @@ export const getMuiCSS = () => `
   }
 
   .MuiTypography-h3 {
-    font-size: 3rem;
+    font-size: clamp(1.75rem, 3.5vw + 0.6rem, 3rem);
     font-weight: 400;
     line-height: 1.167;
     letter-spacing: 0;
@@ -831,6 +855,287 @@ export const getMarkdownStyles = () => `
   }
 `;
 
+/**
+ * Homepage-only CSS: feature card hover states, the hero terminal window,
+ * and the paste creation panel (tabs, drop zone, loader, result alerts).
+ */
+const getHomepageCSS = () => `
+  /* Feature cards: hover lift implemented in CSS instead of inline JS handlers */
+  .feature-card {
+    height: 100%;
+    cursor: default;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .feature-card {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .feature-card:hover,
+    .feature-card:focus-within {
+      transform: translateY(-4px);
+      box-shadow: var(--mui-shadows-4);
+    }
+  }
+
+  /* Hero terminal window */
+  .terminal-window {
+    max-width: 720px;
+    margin: var(--mui-spacing-5) auto 0;
+    border: 1px solid var(--mui-palette-divider);
+    border-radius: 8px;
+    background-color: #161616;
+    box-shadow: var(--mui-shadows-3);
+    overflow: hidden;
+    text-align: left;
+  }
+
+  .terminal-titlebar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background-color: var(--mui-palette-background-paper-elevated);
+    border-bottom: 1px solid var(--mui-palette-divider);
+  }
+
+  .terminal-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+
+  .terminal-dot--red { background-color: #ff5f57; }
+  .terminal-dot--yellow { background-color: #febc2e; }
+  .terminal-dot--green { background-color: #28c840; }
+
+  .terminal-title {
+    margin-left: 8px;
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.75rem;
+    color: var(--mui-palette-text-secondary);
+  }
+
+  .terminal-body {
+    margin: 0;
+    padding: var(--mui-spacing-2);
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.9;
+    background-color: transparent;
+    border: none;
+    border-radius: 0;
+    overflow-x: auto;
+  }
+
+  .terminal-prompt {
+    color: var(--mui-palette-success-main);
+    user-select: none;
+  }
+
+  .terminal-cmd { color: var(--mui-palette-text-primary); }
+  .terminal-output { color: var(--mui-palette-primary-main); }
+
+  /* Paste creator panel */
+  .paste-creator {
+    max-width: 860px;
+    margin: var(--mui-spacing-6) auto 0;
+    text-align: left;
+  }
+
+  .paste-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--mui-palette-divider);
+  }
+
+  .paste-tab {
+    flex: 1;
+    padding: 14px 16px;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--mui-palette-text-secondary);
+    font-family: inherit;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.02857em;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background-color 0.2s;
+  }
+
+  .paste-tab:hover {
+    background-color: var(--mui-palette-action-hover);
+  }
+
+  .paste-tab.Mui-selected {
+    color: var(--mui-palette-primary-main);
+    border-bottom-color: var(--mui-palette-primary-main);
+  }
+
+  .paste-tab-panel {
+    padding: var(--mui-spacing-3);
+  }
+
+  .paste-textarea {
+    width: 100%;
+    min-height: 180px;
+    resize: vertical;
+    padding: var(--mui-spacing-2);
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.875rem;
+    color: var(--mui-palette-text-primary);
+    background-color: var(--mui-palette-background-default);
+    border: 1px solid var(--mui-palette-divider);
+    border-radius: var(--mui-shape-borderRadius);
+  }
+
+  .paste-textarea:focus {
+    outline: none;
+    border-color: var(--mui-palette-primary-main);
+  }
+
+  .drop-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--mui-spacing-1);
+    padding: var(--mui-spacing-5) var(--mui-spacing-2);
+    border: 2px dashed var(--mui-palette-divider);
+    border-radius: var(--mui-shape-borderRadius);
+    color: var(--mui-palette-text-secondary);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+  }
+
+  .drop-zone:hover,
+  .drop-zone:focus-visible {
+    border-color: var(--mui-palette-primary-main);
+  }
+
+  .drop-zone--dragover {
+    border-color: var(--mui-palette-primary-main);
+    background-color: rgba(144, 202, 249, 0.08);
+    color: var(--mui-palette-primary-main);
+  }
+
+  .paste-option-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mui-spacing-2);
+    margin-top: var(--mui-spacing-2);
+  }
+
+  .paste-checkbox-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--mui-palette-text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+  }
+
+  .paste-checkbox-label input {
+    accent-color: var(--mui-palette-primary-main);
+  }
+
+  .file-info {
+    margin-top: var(--mui-spacing-2);
+    padding: var(--mui-spacing-1) var(--mui-spacing-2);
+    border: 1px solid var(--mui-palette-divider);
+    border-radius: var(--mui-shape-borderRadius);
+    background-color: var(--mui-palette-background-paper-elevated);
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    color: var(--mui-palette-text-secondary);
+  }
+
+  /* Circular progress loader */
+  .paste-loader {
+    display: flex;
+    justify-content: center;
+    padding: var(--mui-spacing-2);
+  }
+
+  .paste-loader svg {
+    width: 36px;
+    height: 36px;
+    color: var(--mui-palette-primary-main);
+    animation: rotate 1.4s linear infinite;
+  }
+
+  .paste-loader circle {
+    stroke: currentColor;
+    animation: circular-dash 1.4s ease-in-out infinite;
+  }
+
+  @keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes circular-dash {
+    0% {
+      stroke-dasharray: 1px, 200px;
+      stroke-dashoffset: 0;
+    }
+    50% {
+      stroke-dasharray: 100px, 200px;
+      stroke-dashoffset: -15px;
+    }
+    100% {
+      stroke-dasharray: 100px, 200px;
+      stroke-dashoffset: -125px;
+    }
+  }
+
+  /* Result alert */
+  .result-alert {
+    padding: var(--mui-spacing-2);
+    border-radius: var(--mui-shape-borderRadius);
+    font-size: 0.875rem;
+  }
+
+  .result-alert--success {
+    background-color: rgba(102, 187, 106, 0.12);
+    border: 1px solid rgba(102, 187, 106, 0.4);
+    color: var(--mui-palette-success-main);
+  }
+
+  .result-alert--error {
+    background-color: rgba(244, 67, 54, 0.12);
+    border: 1px solid rgba(244, 67, 54, 0.4);
+    color: var(--mui-palette-error-main);
+  }
+
+  .result-alert p {
+    margin: 4px 0 0;
+    color: var(--mui-palette-text-primary);
+  }
+
+  .result-url-row {
+    display: flex;
+    gap: var(--mui-spacing-1);
+    margin-top: var(--mui-spacing-2);
+  }
+
+  .result-url-row input {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    font-family: 'Roboto Mono', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    color: var(--mui-palette-text-primary);
+    background-color: var(--mui-palette-background-default);
+    border: 1px solid var(--mui-palette-divider);
+    border-radius: var(--mui-shape-borderRadius);
+  }
+`;
+
 export const getHomepageHTML = () => `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -838,14 +1143,24 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DedPaste - Secure Pastebin with End-to-End Encryption</title>
   <meta name="description" content="A secure pastebin with end-to-end encryption, PGP support, and one-time pastes. Share text and files securely.">
+  <meta property="og:title" content="DedPaste - Secure Pastebin with End-to-End Encryption">
+  <meta property="og:description" content="A secure pastebin with end-to-end encryption, PGP support, and one-time pastes. Share text and files securely.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://paste.d3d.dev">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="DedPaste - Secure Pastebin with End-to-End Encryption">
+  <meta name="twitter:description" content="A secure pastebin with end-to-end encryption, PGP support, and one-time pastes. Share text and files securely.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔐</text></svg>">
-  <style>${getMuiCSS()}</style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="${GOOGLE_FONTS_URL}">
+  <style>${getMuiCSS(false)}${getHomepageCSS()}</style>
 </head>
 <body>
   <div class="MuiAppBar MuiAppBar-static">
     <div class="MuiToolbar">
-      <div class="MuiContainer flex items-center justify-between" style="width: 100%;">
-        <h1 class="MuiTypography-h4" style="margin: 0;">
+      <div class="MuiContainer flex items-center justify-between" style="width: 100%; flex-wrap: wrap; gap: 8px;">
+        <h1 class="MuiTypography-h4" style="margin: 0; font-size: clamp(1.5rem, 4vw + 0.5rem, 2.125rem);">
           <span style="color: var(--mui-palette-primary-main);">Ded</span>Paste
         </h1>
         <div class="MuiStack MuiStack-row MuiStack-spacing-2">
@@ -887,13 +1202,96 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
             Documentation
           </a>
         </div>
+
+        <div class="terminal-window" aria-hidden="true">
+          <div class="terminal-titlebar">
+            <span class="terminal-dot terminal-dot--red"></span>
+            <span class="terminal-dot terminal-dot--yellow"></span>
+            <span class="terminal-dot terminal-dot--green"></span>
+            <span class="terminal-title">dedpaste — zsh</span>
+          </div>
+          <pre class="terminal-body"><span class="terminal-prompt">$</span> <span class="terminal-cmd">echo "deploy token: tk_91x4" | dedpaste send --encrypt --one-time</span>
+<span class="terminal-output">https://paste.d3d.dev/e/AbCdEfGh</span>
+<span class="terminal-prompt">$</span> <span class="terminal-cmd">dedpaste send release-notes.md</span>
+<span class="terminal-output">https://paste.d3d.dev/QrStUvWx/release-notes.md</span></pre>
+        </div>
       </div>
 
+      <!-- Create a paste -->
+      <div class="MuiPaper MuiPaper-elevation3 paste-creator">
+        <div class="paste-tabs" role="tablist" aria-label="Create a paste">
+          <button type="button" id="tab-text" class="paste-tab Mui-selected" role="tab" aria-selected="true" aria-controls="text-tab-content" onclick="switchTab('text')">
+            Share Text
+          </button>
+          <button type="button" id="tab-upload" class="paste-tab" role="tab" aria-selected="false" aria-controls="upload-tab-content" onclick="switchTab('upload')">
+            Upload File
+          </button>
+        </div>
+
+        <div id="text-tab-content" class="paste-tab-panel" role="tabpanel" aria-labelledby="tab-text">
+          <textarea id="textContent" class="paste-textarea" placeholder="Paste or type the text you want to share..." aria-label="Text to share"></textarea>
+          <div class="paste-option-row">
+            <label class="paste-checkbox-label">
+              <input type="checkbox" id="textOneTime">
+              One-time (self-destructs after first view)
+            </label>
+            <div class="MuiStack MuiStack-row MuiStack-spacing-1">
+              <button type="button" class="MuiButton MuiButton-text MuiButton-textPrimary" onclick="clearText()">Clear</button>
+              <button type="button" class="MuiButton MuiButton-contained MuiButton-containedPrimary" onclick="shareText()">Share Text</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="upload-tab-content" class="paste-tab-panel" role="tabpanel" aria-labelledby="tab-upload" style="display: none;">
+          <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Choose a file or drag and drop it here">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="36" height="36" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="17 8 12 3 7 8"></polyline>
+              <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <span>Drag &amp; drop a file here, or click to browse</span>
+            <span class="MuiTypography-body2">Maximum size: 25 MB</span>
+          </div>
+          <input type="file" id="fileInput" style="display: none;" aria-hidden="true" tabindex="-1">
+          <div id="fileInfo" class="file-info" style="display: none;">
+            <div id="fileName"></div>
+            <div id="fileSize"></div>
+          </div>
+          <div class="paste-option-row">
+            <label class="paste-checkbox-label">
+              <input type="checkbox" id="oneTime">
+              One-time (self-destructs after first view)
+            </label>
+            <div class="MuiStack MuiStack-row MuiStack-spacing-1">
+              <button type="button" class="MuiButton MuiButton-text MuiButton-textPrimary" onclick="clearUpload()">Clear</button>
+              <button type="button" class="MuiButton MuiButton-contained MuiButton-containedPrimary" onclick="uploadFile()">Upload File</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="loader" class="paste-loader" style="display: none;" role="status" aria-label="Uploading">
+          <svg viewBox="22 22 44 44" aria-hidden="true">
+            <circle cx="44" cy="44" r="20.2" fill="none" stroke-width="3.6"></circle>
+          </svg>
+        </div>
+
+        <div id="resultContainer" class="paste-tab-panel" style="display: none; padding-top: 0;">
+          <div id="resultAlert" class="result-alert" role="alert">
+            <strong id="resultTitle"></strong>
+            <p id="resultMessage"></p>
+            <div id="resultUrl" class="result-url-row" style="display: none;">
+              <input id="shareUrl" type="text" readonly aria-label="Paste URL">
+              <button type="button" class="MuiButton MuiButton-outlined MuiButton-outlinedPrimary" onclick="copyToClipboard(this)">Copy</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mb-8">
       <div class="MuiGrid-container MuiGrid-spacing-3">
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard feature-card">
             <div class="MuiCardContent">
               <div class="mb-2">
                 <span class="MuiChip MuiChip-primary">🔒 End-to-End</span>
@@ -907,9 +1305,7 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;"
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';"
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard feature-card">
             <div class="MuiCardContent">
               <div class="mb-2">
                 <span class="MuiChip MuiChip-primary">🔑 PGP Ready</span>
@@ -923,9 +1319,7 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard feature-card">
             <div class="MuiCardContent">
               <div class="mb-2">
                 <span class="MuiChip MuiChip-secondary">⏱️ One-Time</span>
@@ -939,9 +1333,7 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard feature-card">
             <div class="MuiCardContent">
               <div class="mb-2">
                 <span class="MuiChip">📁 Binary Files</span>
@@ -955,9 +1347,7 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;"
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';"
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard feature-card">
             <div class="MuiCardContent">
               <div class="mb-2">
                 <span class="MuiChip">👥 Recipient Groups</span>
@@ -971,9 +1361,7 @@ export const getHomepageHTML = () => `<!DOCTYPE html>
         </div>
         
         <div class="MuiGrid-item MuiGrid-xs-12 MuiGrid-sm-6 MuiGrid-md-4">
-          <div class="MuiPaper MuiPaper-elevation3 MuiCard" style="height: 100%; transition: transform 0.2s, box-shadow 0.2s; cursor: default;" 
-               onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='var(--mui-shadows-4)';" 
-               onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='var(--mui-shadows-3)';">
+          <div class="MuiPaper MuiPaper-elevation3 MuiCard feature-card">
             <div class="MuiCardContent">
               <div class="mb-2">
                 <span class="MuiChip">⚡ CLI Power</span>
@@ -1211,74 +1599,25 @@ curl -X POST https://paste.d3d.dev/api/paste \\
     <div class="MuiDivider mb-6"></div>
   </main>
 
-  <style>
-    @keyframes rotate {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-    @keyframes circular-dash {
-      0% {
-        stroke-dasharray: 1px, 200px;
-        stroke-dashoffset: 0;
-      }
-      50% {
-        stroke-dasharray: 100px, 200px;
-        stroke-dashoffset: -15px;
-      }
-      100% {
-        stroke-dasharray: 100px, 200px;
-        stroke-dashoffset: -125px;
-      }
-    }
-  </style>
-
   <script>
+    // Client-side mirror of the server's MAX_STANDARD_UPLOAD_SIZE (25 MB)
+    const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+
     let selectedFile = null;
 
     // Tab switching
     function switchTab(tab) {
-      if (tab === 'upload') {
-        document.getElementById('tab-upload').classList.add('Mui-selected');
-        document.getElementById('tab-upload').style.color = 'var(--mui-palette-primary-main)';
-        document.getElementById('tab-upload').style.borderBottom = '2px solid var(--mui-palette-primary-main)';
-        document.getElementById('tab-text').classList.remove('Mui-selected');
-        document.getElementById('tab-text').style.color = 'var(--mui-palette-text-secondary)';
-        document.getElementById('tab-text').style.borderBottom = '2px solid transparent';
-        document.getElementById('upload-tab-content').style.display = 'block';
-        document.getElementById('text-tab-content').style.display = 'none';
-      } else {
-        document.getElementById('tab-text').classList.add('Mui-selected');
-        document.getElementById('tab-text').style.color = 'var(--mui-palette-primary-main)';
-        document.getElementById('tab-text').style.borderBottom = '2px solid var(--mui-palette-primary-main)';
-        document.getElementById('tab-upload').classList.remove('Mui-selected');
-        document.getElementById('tab-upload').style.color = 'var(--mui-palette-text-secondary)';
-        document.getElementById('tab-upload').style.borderBottom = '2px solid transparent';
-        document.getElementById('text-tab-content').style.display = 'block';
-        document.getElementById('upload-tab-content').style.display = 'none';
-      }
+      const isUpload = tab === 'upload';
+      const uploadTab = document.getElementById('tab-upload');
+      const textTab = document.getElementById('tab-text');
+
+      uploadTab.classList.toggle('Mui-selected', isUpload);
+      uploadTab.setAttribute('aria-selected', String(isUpload));
+      textTab.classList.toggle('Mui-selected', !isUpload);
+      textTab.setAttribute('aria-selected', String(!isUpload));
+      document.getElementById('upload-tab-content').style.display = isUpload ? 'block' : 'none';
+      document.getElementById('text-tab-content').style.display = isUpload ? 'none' : 'block';
       document.getElementById('resultContainer').style.display = 'none';
-    }
-
-    // File handling
-    document.getElementById('dropZone').addEventListener('click', () => {
-      document.getElementById('fileInput').click();
-    });
-
-    function handleDrop(event) {
-      event.preventDefault();
-      const files = event.dataTransfer.files;
-      if (files.length > 0) {
-        handleFileSelect(files);
-      }
-    }
-
-    function handleFileSelect(files) {
-      if (files.length > 0) {
-        selectedFile = files[0];
-        document.getElementById('fileName').textContent = 'Name: ' + selectedFile.name;
-        document.getElementById('fileSize').textContent = 'Size: ' + formatFileSize(selectedFile.size);
-        document.getElementById('fileInfo').style.display = 'block';
-      }
     }
 
     function formatFileSize(bytes) {
@@ -1289,10 +1628,65 @@ curl -X POST https://paste.d3d.dev/api/paste \\
       return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
 
+    function handleFileSelect(files) {
+      if (!files || files.length === 0) {
+        return;
+      }
+      const file = files[0];
+
+      // Client-side size validation (server enforces the same 25 MB limit)
+      if (file.size > MAX_UPLOAD_BYTES) {
+        selectedFile = null;
+        document.getElementById('fileInfo').style.display = 'none';
+        showError('File is too large (' + formatFileSize(file.size) + '). Maximum size is 25 MB.');
+        return;
+      }
+
+      selectedFile = file;
+      document.getElementById('resultContainer').style.display = 'none';
+      document.getElementById('fileName').textContent = 'Name: ' + file.name;
+      document.getElementById('fileSize').textContent = 'Size: ' + formatFileSize(file.size);
+      document.getElementById('fileInfo').style.display = 'block';
+    }
+
+    // Drop zone wiring (click, keyboard, and drag-and-drop with visual state)
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropZone.addEventListener('click', () => {
+      fileInput.click();
+    });
+    dropZone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        fileInput.click();
+      }
+    });
+    dropZone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      dropZone.classList.add('drop-zone--dragover');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drop-zone--dragover');
+    });
+    dropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dropZone.classList.remove('drop-zone--dragover');
+      handleFileSelect(event.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', () => {
+      handleFileSelect(fileInput.files);
+    });
+
     // Upload functions
     async function uploadFile() {
       if (!selectedFile) {
         showError('Please select a file to upload');
+        return;
+      }
+
+      if (selectedFile.size > MAX_UPLOAD_BYTES) {
+        showError('File is too large (' + formatFileSize(selectedFile.size) + '). Maximum size is 25 MB.');
         return;
       }
 
@@ -1302,7 +1696,7 @@ curl -X POST https://paste.d3d.dev/api/paste \\
       try {
         const formData = new FormData();
         formData.append('file', selectedFile);
-        formData.append('oneTime', oneTime);
+        formData.append('oneTime', String(oneTime));
 
         const response = await fetch('/api/upload', {
           method: 'POST',
@@ -1362,7 +1756,7 @@ curl -X POST https://paste.d3d.dev/api/paste \\
     // Clear functions
     function clearUpload() {
       selectedFile = null;
-      document.getElementById('fileInput').value = '';
+      fileInput.value = '';
       document.getElementById('fileInfo').style.display = 'none';
       document.getElementById('oneTime').checked = false;
       document.getElementById('resultContainer').style.display = 'none';
@@ -1376,25 +1770,19 @@ curl -X POST https://paste.d3d.dev/api/paste \\
 
     // Helper functions
     function showLoader(show) {
-      document.getElementById('loader').style.display = show ? 'block' : 'none';
+      document.getElementById('loader').style.display = show ? 'flex' : 'none';
     }
 
     function showSuccess(message, url) {
-      const container = document.getElementById('resultContainer');
-      const alert = document.getElementById('resultAlert');
-      const title = document.getElementById('resultTitle');
-      const messageEl = document.getElementById('resultMessage');
       const urlContainer = document.getElementById('resultUrl');
 
-      alert.className = 'MuiAlert MuiAlert-success';
-      alert.style.background = 'rgba(102, 187, 106, 0.12)';
-      alert.style.color = 'var(--mui-palette-success-main)';
-      container.style.display = 'block';
-      title.textContent = 'Success!';
-      messageEl.textContent = message;
+      document.getElementById('resultAlert').className = 'result-alert result-alert--success';
+      document.getElementById('resultContainer').style.display = 'block';
+      document.getElementById('resultTitle').textContent = 'Success!';
+      document.getElementById('resultMessage').textContent = message;
 
       if (url) {
-        urlContainer.style.display = 'block';
+        urlContainer.style.display = 'flex';
         document.getElementById('shareUrl').value = url;
       } else {
         urlContainer.style.display = 'none';
@@ -1402,30 +1790,40 @@ curl -X POST https://paste.d3d.dev/api/paste \\
     }
 
     function showError(message) {
-      const container = document.getElementById('resultContainer');
-      const alert = document.getElementById('resultAlert');
-      const title = document.getElementById('resultTitle');
-      const messageEl = document.getElementById('resultMessage');
-
-      alert.className = 'MuiAlert MuiAlert-error';
-      alert.style.background = 'rgba(244, 67, 54, 0.12)';
-      alert.style.color = 'var(--mui-palette-error-main)';
-      container.style.display = 'block';
-      title.textContent = 'Error';
-      messageEl.textContent = message;
+      document.getElementById('resultAlert').className = 'result-alert result-alert--error';
+      document.getElementById('resultContainer').style.display = 'block';
+      document.getElementById('resultTitle').textContent = 'Error';
+      document.getElementById('resultMessage').textContent = message;
       document.getElementById('resultUrl').style.display = 'none';
     }
 
-    function copyToClipboard() {
+    // Copy via the async Clipboard API, falling back to execCommand
+    async function copyToClipboard(button) {
       const input = document.getElementById('shareUrl');
-      input.select();
-      document.execCommand('copy');
+      let copied = false;
 
-      const btn = event.target;
-      const originalText = btn.textContent;
-      btn.textContent = 'Copied!';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+          await navigator.clipboard.writeText(input.value);
+          copied = true;
+        } catch (error) {
+          copied = false;
+        }
+      }
+
+      if (!copied) {
+        input.select();
+        try {
+          copied = document.execCommand('copy');
+        } catch (error) {
+          copied = false;
+        }
+      }
+
+      const originalText = button.textContent;
+      button.textContent = copied ? 'Copied!' : 'Copy failed';
       setTimeout(() => {
-        btn.textContent = originalText;
+        button.textContent = originalText;
       }, 2000);
     }
   </script>
@@ -1447,7 +1845,7 @@ curl -X POST https://paste.d3d.dev/api/paste \\
           <a href="https://github.com/anoncam/dedpaste/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
         </div>
         <p class="MuiTypography-body2" style="color: var(--mui-palette-text-secondary); margin-bottom: var(--mui-spacing-1);">
-          Version 1.23.2 • © 2025 DedPaste
+          Version ${PACKAGE_VERSION} • © 2026 DedPaste
         </p>
         <p class="MuiTypography-caption" style="color: var(--mui-palette-text-disabled);">
           Built with 🔐 for privacy enthusiasts • Powered by Cloudflare Workers & Material-UI
